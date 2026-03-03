@@ -1,0 +1,64 @@
+# Ralph PRD Converter
+
+Convert the following PRD into the prd.json format that Ralph uses for autonomous execution.
+
+---
+
+## Input PRD
+
+{{ prd_markdown }}
+
+---
+
+## Branch Name
+
+Use this branch name: `{{ branch_name }}`
+
+## Project Name
+
+Use this project name: `{{ project_name }}`
+
+---
+
+## Output Format
+
+Output ONLY valid JSON, no markdown fences, no explanation. Use this exact structure:
+
+{
+  "project": "[Project Name]",
+  "branchName": "[branch name]",
+  "description": "[Feature description from PRD title/intro]",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "[Story title]",
+      "description": "As a [user], I want [feature] so that [benefit]",
+      "acceptanceCriteria": [
+        "Criterion 1",
+        "Criterion 2",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
+
+---
+
+## Rules
+
+1. **Each user story becomes one JSON entry** — extract from the PRD's user stories section
+2. **Story size** — each story must be completable in ONE Ralph iteration (one context window). If a story is too big, split it.
+3. **Story ordering** — dependencies first: schema → backend → UI. Earlier stories must not depend on later ones.
+4. **IDs**: Sequential (US-001, US-002, etc.)
+5. **Priority**: Based on dependency order, starting at 1
+6. **All stories**: `passes: false` and empty `notes`
+7. **Always add**: "Typecheck passes" to every story's acceptance criteria
+8. **For UI stories**: Also add "Verify in browser using dev-browser skill"
+9. **Acceptance criteria must be verifiable** — "Works correctly" is bad, "Button shows confirmation dialog before deleting" is good
+
+---
+
+Now convert the PRD above into the JSON format. Output ONLY the JSON.
