@@ -92,9 +92,7 @@ async def generate_prd(
     prd_md_path = tasks_dir / f"prd-{_slugify(ctx.issue_key)}.md"
 
     if dry_run:
-        log.info("[DRY RUN] Would generate PRD for %s", ctx.issue_key)
-        _write_fallback_prd_json(prd_json_path, ctx, branch_name)
-        prd_md_path.write_text(f"# {ctx.issue_key}: {ctx.title}\n\n{ctx.description}\n")
+        log.info("[DRY RUN] Would generate PRD for %s at %s", ctx.issue_key, prd_json_path)
         return prd_json_path
 
     # Step 1: Generate structured markdown PRD

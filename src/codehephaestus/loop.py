@@ -38,12 +38,17 @@ async def _handle_work_item(
 
     loop_prevention.record_attempt(issue.key)
 
-    if work.tier == Tier.NEW_ISSUE:
+    if work.tier == Tier.NEW_ISSUE and not settings.dry_run:
         log.info("%s: transitioning To Do → In Progress", issue.key)
         await tracker.transition_issue(issue.key, settings.jira_status_in_progress)
+    elif work.tier == Tier.NEW_ISSUE:
+        log.info("[DRY RUN] Would transition %s To Do → In Progress", issue.key)
 
-    # Ensure branch exists and check it out
-    working_dir = await ensure_branch(branch, repo_path)
+    if settings.dry_run:
+        log.info("[DRY RUN] Would create/checkout branch %s", branch)
+        working_dir = repo_path
+    else:
+        working_dir = await ensure_branch(branch, repo_path)
 
     # Build PRD context based on tier
     if work.tier == Tier.NEW_ISSUE:

@@ -82,11 +82,11 @@ class JiraTracker(TaskTracker):
             f'AND status = "{status}"'
         )
         log.debug("JQL: %s", jql)
-        resp = await self._client.get(
-            "/search",
-            params={
+        resp = await self._client.post(
+            "/search/jql",
+            json={
                 "jql": jql,
-                "fields": "summary,description,status,labels,created,updated",
+                "fields": ["summary", "description", "status", "labels", "created", "updated"],
                 "maxResults": 50,
             },
         )

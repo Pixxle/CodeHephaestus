@@ -52,7 +52,7 @@ def main(argv: list[str] | None = None) -> None:
     settings.dry_run = args.dry_run
     settings.verbose = args.verbose
 
-    if args.once:
+    if args.once or args.dry_run:
         settings.max_iterations = 1
     elif args.max_iterations is not None:
         settings.max_iterations = args.max_iterations
