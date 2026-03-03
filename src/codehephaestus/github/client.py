@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass
 
 log = logging.getLogger("codehephaestus.github")
@@ -183,14 +184,14 @@ class GitHubClient:
                 "--head",
                 branch,
                 *(["--draft"] if draft else []),
-                "--json",
-                "number",
-                "--jq",
-                ".number",
             ],
             cwd=self._cwd,
         )
-        pr_number = int(out.strip())
+        # gh pr create outputs the PR URL, e.g. https://github.com/org/repo/pull/123
+        match = re.search(r"/pull/(\d+)", out.strip())
+        if not match:
+            raise RuntimeError(f"Could not parse PR number from gh output: {out!r}")
+        pr_number = int(match.group(1))
         log.info("Created PR #%d for branch %s", pr_number, branch)
         return pr_number
 

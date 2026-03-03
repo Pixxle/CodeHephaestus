@@ -4,7 +4,12 @@ import asyncio
 import logging
 
 from codehephaestus.config import Settings
-from codehephaestus.git.worktree import ensure_branch, get_current_sha
+from codehephaestus.git.worktree import (
+    cleanup_worktree,
+    ensure_worktree,
+    get_current_sha,
+    update_main,
+)
 from codehephaestus.github.client import GitHubClient
 from codehephaestus.prd.generator import generate_prd
 from codehephaestus.prd.models import PRDContext
@@ -45,10 +50,10 @@ async def _handle_work_item(
         log.info("[DRY RUN] Would transition %s To Do → In Progress", issue.key)
 
     if settings.dry_run:
-        log.info("[DRY RUN] Would create/checkout branch %s", branch)
+        log.info("[DRY RUN] Would create worktree for branch %s", branch)
         working_dir = repo_path
     else:
-        working_dir = await ensure_branch(branch, repo_path)
+        working_dir = await ensure_worktree(branch, repo_path)
 
     # Build PRD context based on tier
     if work.tier == Tier.NEW_ISSUE:
@@ -138,6 +143,9 @@ async def _handle_work_item(
     sha_after = await get_current_sha(working_dir)
     loop_prevention.mark_sha_processed(sha_after)
 
+    # Clean up worktree now that work is pushed
+    await cleanup_worktree(branch, repo_path)
+
 
 async def run_loop(settings: Settings) -> None:
     from codehephaestus.trackers import create_tracker
@@ -155,6 +163,9 @@ async def run_loop(settings: Settings) -> None:
     while settings.max_iterations == 0 or iteration < settings.max_iterations:
         iteration += 1
         log.info("=== Iteration %d (%s) ===", iteration, mode)
+
+        # Keep main up to date so new branches start from latest
+        await update_main(settings.target_repo_path)
 
         # Housekeeping: check merged PRs
         await dispatcher.check_merged_prs()
