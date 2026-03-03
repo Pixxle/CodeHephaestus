@@ -58,6 +58,29 @@ class PriorityDispatcher:
                     issue.key, self._settings.jira_status_done
                 )
 
+    async def check_ci_passed(self) -> None:
+        """Housekeeping: transition In Progress issues to In Review when CI passes."""
+        log.info("Checking for CI-passing PRs...")
+        issues = await self._tracker.fetch_issues_by_status(
+            self._settings.jira_status_in_progress
+        )
+        for issue in issues:
+            branch = self._tracker.get_issue_branch_name(issue)
+            pr_number = await self._github.find_pr_for_branch(branch)
+            if not pr_number:
+                continue
+            status = await self._github.get_pr_check_status(pr_number)
+            if status == "success":
+                log.info(
+                    "PR #%d for %s: CI passed → transitioning to %s",
+                    pr_number,
+                    issue.key,
+                    self._settings.jira_status_in_review,
+                )
+                await self._tracker.transition_issue(
+                    issue.key, self._settings.jira_status_in_review
+                )
+
     async def find_next_work_item(self) -> WorkItem | None:
         # Priority 1: Review feedback
         item = await self._check_review_feedback()
