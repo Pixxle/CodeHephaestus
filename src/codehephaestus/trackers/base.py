@@ -23,3 +23,6 @@ class TaskTracker(ABC):
 
     @abstractmethod
     async def add_comment(self, issue_key: str, body: str) -> None: ...
+
+    @abstractmethod
+    async def attach_file(self, issue_key: str, file_path: str) -> None: ...

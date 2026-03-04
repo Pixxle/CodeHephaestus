@@ -82,13 +82,19 @@ async def _handle_work_item(
         return
 
     # Generate PRD → prd.json via AI tool (two-step)
-    prd_path = await generate_prd(
+    prd_path, prd_md_path = await generate_prd(
         ctx,
         working_dir=working_dir,
         branch_name=branch,
         tool=settings.tool,
         dry_run=settings.dry_run,
     )
+
+    # Attach the markdown PRD to the Jira ticket
+    if not settings.dry_run and prd_md_path.exists():
+        await tracker.attach_file(issue.key, str(prd_md_path))
+    elif settings.dry_run:
+        log.info("[DRY RUN] Would attach %s to %s", prd_md_path.name, issue.key)
 
     # Run ralph loop to implement the PRD
     exit_code = await run_ralph(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 
@@ -173,6 +174,16 @@ class JiraTracker(TaskTracker):
         )
         resp.raise_for_status()
         log.debug("%s: comment added", issue_key)
+
+    async def attach_file(self, issue_key: str, file_path: str) -> None:
+        path = Path(file_path)
+        resp = await self._client.post(
+            f"/issue/{issue_key}/attachments",
+            headers={"X-Atlassian-Token": "no-check"},
+            files={"file": (path.name, path.read_bytes(), "application/octet-stream")},
+        )
+        resp.raise_for_status()
+        log.info("%s: attached %s", issue_key, path.name)
 
     async def close(self) -> None:
         await self._client.aclose()

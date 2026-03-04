@@ -73,14 +73,14 @@ async def generate_prd(
     branch_name: str,
     tool: str = "claude",
     dry_run: bool = False,
-) -> Path:
+) -> tuple[Path, Path]:
     """Generate a PRD and convert it to prd.json for ralph.
 
     Two-step process:
     1. Call AI tool with PRD skill prompt → structured markdown PRD
     2. Call AI tool with ralph converter prompt → prd.json
 
-    Returns the path to the generated prd.json file.
+    Returns (prd_json_path, prd_md_path).
     """
     ralph_dir = Path(working_dir) / "scripts" / "ralph"
     ralph_dir.mkdir(parents=True, exist_ok=True)
@@ -93,7 +93,7 @@ async def generate_prd(
 
     if dry_run:
         log.info("[DRY RUN] Would generate PRD for %s at %s", ctx.issue_key, prd_json_path)
-        return prd_json_path
+        return prd_json_path, prd_md_path
 
     # Step 1: Generate structured markdown PRD
     log.info("Step 1: Generating markdown PRD for %s using %s...", ctx.issue_key, tool)
@@ -130,7 +130,7 @@ async def generate_prd(
     if rc != 0:
         log.error("PRD→JSON conversion failed (exit=%d): %s", rc, err.strip())
         _write_fallback_prd_json(prd_json_path, ctx, branch_name)
-        return prd_json_path
+        return prd_json_path, prd_md_path
 
     # Parse and validate the JSON
     raw_json = _extract_json(json_output)
@@ -140,7 +140,7 @@ async def generate_prd(
         log.error("Failed to parse prd.json from AI output: %s", exc)
         log.debug("Raw output:\n%s", json_output)
         _write_fallback_prd_json(prd_json_path, ctx, branch_name)
-        return prd_json_path
+        return prd_json_path, prd_md_path
 
     # Ensure required fields
     prd_data.setdefault("project", ctx.issue_key.split("-")[0])
@@ -160,7 +160,7 @@ async def generate_prd(
         prd_json_path,
         len(prd_data["userStories"]),
     )
-    return prd_json_path
+    return prd_json_path, prd_md_path
 
 
 def _write_fallback_prd_json(
