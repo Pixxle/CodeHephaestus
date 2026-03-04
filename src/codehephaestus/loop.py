@@ -276,7 +276,12 @@ async def run_loop(settings: Settings) -> None:
 
     tracker = create_tracker(settings)
     github = GitHubClient(settings.target_repo_path)
-    loop_prevention = LoopPrevention()
+
+    if settings.state_db_path:
+        db_path = Path(settings.state_db_path)
+    else:
+        db_path = Path(settings.target_repo_path) / ".codehephaestus" / "state.db"
+    loop_prevention = LoopPrevention(db_path=db_path)
     dispatcher = PriorityDispatcher(tracker, github, settings, loop_prevention)
 
     await boot(settings, tracker, github)
@@ -316,6 +321,8 @@ async def run_loop(settings: Settings) -> None:
         await asyncio.sleep(settings.poll_interval)
 
     log.info("Loop finished after %d iterations.", iteration)
+
+    loop_prevention.close()
 
     if hasattr(tracker, "close"):
         await tracker.close()

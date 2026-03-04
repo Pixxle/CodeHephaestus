@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     tool: str = "claude"
     target_repo_path: str = "."
     worktree_path: str = ""
+    state_db_path: str = ""
 
     # CLI overrides (not from .env)
     dry_run: bool = False
