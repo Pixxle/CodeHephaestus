@@ -165,7 +165,10 @@ async def _handle_review_feedback(
         summary_lines = ["Addressed the following review feedback:"]
         for c in comments:
             summary_lines.append(f"- **{c['author']}** ({c['source']}): {c['body']}")
-        await github.post_pr_comment(pr_number, "\n".join(summary_lines))
+        try:
+            await github.post_pr_comment(pr_number, "\n".join(summary_lines))
+        except RuntimeError:
+            log.warning("%s: failed to post PR summary comment, continuing", issue.key)
 
     sha_after = await get_current_sha(working_dir)
     loop_prevention.mark_sha_processed(sha_after)

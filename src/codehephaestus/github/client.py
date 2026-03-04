@@ -76,7 +76,7 @@ class GitHubClient:
                 "api",
                 f"/repos/{{owner}}/{{repo}}/pulls/{pr_number}/comments",
                 "--jq",
-                ".[] | {id: .id, author: .user.login, body: .body, created_at: .created_at}",
+                '.[] | {id: .id, author: .user.login, body: .body, created_at: .created_at, thumbs_up: .reactions["+1"]}',
             ],
             cwd=self._cwd,
         )
@@ -87,7 +87,7 @@ class GitHubClient:
                 c = json.loads(line)
                 if since and c["created_at"] <= since:
                     continue
-                if c["author"] == self._username or c["author"].endswith("[bot]"):
+                if not c.get("thumbs_up"):
                     continue
                 comments.append(
                     PRComment(
@@ -104,7 +104,7 @@ class GitHubClient:
                 "api",
                 f"/repos/{{owner}}/{{repo}}/issues/{pr_number}/comments",
                 "--jq",
-                ".[] | {id: .id, author: .user.login, body: .body, created_at: .created_at}",
+                '.[] | {id: .id, author: .user.login, body: .body, created_at: .created_at, thumbs_up: .reactions["+1"]}',
             ],
             cwd=self._cwd,
         )
@@ -115,7 +115,7 @@ class GitHubClient:
                 c = json.loads(line)
                 if since and c["created_at"] <= since:
                     continue
-                if c["author"] == self._username or c["author"].endswith("[bot]"):
+                if not c.get("thumbs_up"):
                     continue
                 comments.append(
                     PRComment(
@@ -217,6 +217,13 @@ class GitHubClient:
         log.info("Posted comment on PR #%d", pr_number)
 
     async def push_branch(self, branch: str) -> None:
+        # Pull remote changes first to avoid rejected pushes
+        rc, _, _ = await _run(
+            ["git", "pull", "--rebase", "origin", branch],
+            cwd=self._cwd,
+        )
+        if rc != 0:
+            log.debug("Pull --rebase failed for %s (may not exist on remote yet)", branch)
         await _run_ok(
             ["git", "push", "--set-upstream", "origin", branch],
             cwd=self._cwd,
