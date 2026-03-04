@@ -42,9 +42,9 @@ class PriorityDispatcher:
     async def check_merged_prs(self) -> None:
         """Housekeeping: transition merged PRs to Done."""
         log.info("Checking for merged PRs...")
-        issues = await self._tracker.fetch_issues_by_status(
-            self._settings.jira_status_in_review
-        )
+        issues = []
+        for status in (self._settings.jira_status_in_review, self._settings.jira_status_in_progress):
+            issues.extend(await self._tracker.fetch_issues_by_status(status))
         for issue in issues:
             branch = self._tracker.get_issue_branch_name(issue)
             pr_number = await self._github.find_pr_for_branch(branch)

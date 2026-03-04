@@ -55,14 +55,18 @@ class GitHubClient:
         return self._username
 
     async def find_pr_for_branch(self, branch: str) -> int | None:
-        rc, out, _ = await _run(
-            ["gh", "pr", "list", "--head", branch, "--json", "number", "--limit", "1"],
-            cwd=self._cwd,
-        )
-        if rc != 0 or not out:
-            return None
-        prs = json.loads(out)
-        return prs[0]["number"] if prs else None
+        # Check open PRs first, then merged — gh pr list only returns open by default
+        for state in ("open", "merged"):
+            rc, out, _ = await _run(
+                ["gh", "pr", "list", "--head", branch, "--state", state,
+                 "--json", "number", "--limit", "1"],
+                cwd=self._cwd,
+            )
+            if rc == 0 and out:
+                prs = json.loads(out)
+                if prs:
+                    return prs[0]["number"]
+        return None
 
     @staticmethod
     def _parse_reacted_comments(output: str, since: str | None) -> list[PRComment]:
