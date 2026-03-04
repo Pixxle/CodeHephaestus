@@ -34,7 +34,6 @@ class Settings(BaseSettings):
     poll_interval: int = 120
     max_iterations: int = Field(default=0, description="0 = infinite")
     tool: str = "claude"
-    ralph_max_iterations: int = 10
     target_repo_path: str = "."
 
     # CLI overrides (not from .env)

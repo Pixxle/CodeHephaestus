@@ -31,6 +31,7 @@ async def _run_ok(cmd: list[str], cwd: str | None = None) -> str:
 
 @dataclass
 class PRComment:
+    id: int
     author: str
     body: str
     created_at: str
@@ -73,7 +74,7 @@ class GitHubClient:
                 "api",
                 f"/repos/{{owner}}/{{repo}}/pulls/{pr_number}/comments",
                 "--jq",
-                ".[] | {author: .user.login, body: .body, created_at: .created_at}",
+                ".[] | {id: .id, author: .user.login, body: .body, created_at: .created_at}",
             ],
             cwd=self._cwd,
         )
@@ -86,7 +87,7 @@ class GitHubClient:
                     continue
                 comments.append(
                     PRComment(
-                        author=c["author"], body=c["body"], created_at=c["created_at"]
+                        id=c["id"], author=c["author"], body=c["body"], created_at=c["created_at"]
                     )
                 )
             except (json.JSONDecodeError, KeyError):
@@ -99,7 +100,7 @@ class GitHubClient:
                 "api",
                 f"/repos/{{owner}}/{{repo}}/issues/{pr_number}/comments",
                 "--jq",
-                ".[] | {author: .user.login, body: .body, created_at: .created_at}",
+                ".[] | {id: .id, author: .user.login, body: .body, created_at: .created_at}",
             ],
             cwd=self._cwd,
         )
@@ -114,7 +115,7 @@ class GitHubClient:
                     continue
                 comments.append(
                     PRComment(
-                        author=c["author"], body=c["body"], created_at=c["created_at"]
+                        id=c["id"], author=c["author"], body=c["body"], created_at=c["created_at"]
                     )
                 )
             except (json.JSONDecodeError, KeyError):
@@ -194,6 +195,14 @@ class GitHubClient:
         pr_number = int(match.group(1))
         log.info("Created PR #%d for branch %s", pr_number, branch)
         return pr_number
+
+    async def post_pr_comment(self, pr_number: int, body: str) -> None:
+        """Post a comment on a PR."""
+        await _run_ok(
+            ["gh", "pr", "comment", str(pr_number), "--body", body],
+            cwd=self._cwd,
+        )
+        log.info("Posted comment on PR #%d", pr_number)
 
     async def push_branch(self, branch: str) -> None:
         await _run_ok(

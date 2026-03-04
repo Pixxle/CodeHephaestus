@@ -4,7 +4,7 @@
 
 # CodeHephaestus
 
-Autonomous task runner that picks up Jira issues, generates PRDs, runs [ralph](https://github.com/snarktank/ralph) to implement them, and creates GitHub PRs — powered by [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview).
+Autonomous task runner that picks up Jira issues, implements them with AI, and creates GitHub PRs — powered by [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview).
 
 Continuously polls your task tracker, prioritizes work (review feedback → CI failures → new issues), manages git branches, and transitions Jira statuses through the full lifecycle.
 

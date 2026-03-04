@@ -12,7 +12,7 @@ from codehephaestus.loop import run_loop
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="codehephaestus",
-        description="Autonomous task runner: Jira → PRD → ralph → PR",
+        description="Autonomous task runner: Jira → AI → PR",
     )
     parser.add_argument(
         "--dry-run",

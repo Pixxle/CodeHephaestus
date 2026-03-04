@@ -137,7 +137,7 @@ class JiraTracker(TaskTracker):
         log.info("%s: transitioned → %s", issue_key, to_status)
 
     def get_issue_branch_name(self, issue: Issue) -> str:
-        return f"ralph/{issue.key}-{_slugify(issue.title)}"
+        return f"codehephaestus/{issue.key}-{_slugify(issue.title)}"
 
     async def get_comments(self, issue_key: str) -> list[Comment]:
         resp = await self._client.get(f"/issue/{issue_key}/comment")
