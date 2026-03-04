@@ -105,7 +105,7 @@ class GitHubClient:
         jq_filter = '.[] | {id: .id, author: .user.login, body: .body, created_at: .created_at, thumbs_up: .reactions["+1"], eyes: .reactions.eyes}'
 
         # Review comments
-        out = await _run_ok(
+        rc, out, _ = await _run(
             [
                 "gh", "api",
                 f"/repos/{{owner}}/{{repo}}/pulls/{pr_number}/comments",
@@ -113,10 +113,13 @@ class GitHubClient:
             ],
             cwd=self._cwd,
         )
-        comments.extend(self._parse_reacted_comments(out, since))
+        if rc == 0:
+            comments.extend(self._parse_reacted_comments(out, since))
+        else:
+            log.warning("Failed to fetch review comments for PR #%d", pr_number)
 
         # Issue comments on PR
-        out2 = await _run_ok(
+        rc2, out2, _ = await _run(
             [
                 "gh", "api",
                 f"/repos/{{owner}}/{{repo}}/issues/{pr_number}/comments",
@@ -124,7 +127,10 @@ class GitHubClient:
             ],
             cwd=self._cwd,
         )
-        comments.extend(self._parse_reacted_comments(out2, since))
+        if rc2 == 0:
+            comments.extend(self._parse_reacted_comments(out2, since))
+        else:
+            log.warning("Failed to fetch issue comments for PR #%d", pr_number)
 
         return comments
 
