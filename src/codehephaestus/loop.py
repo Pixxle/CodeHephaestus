@@ -111,67 +111,79 @@ async def _handle_review_feedback(
     github: GitHubClient,
     loop_prevention: LoopPrevention,
 ) -> None:
-    """Handle review feedback: address comments, push changes, post summary on PR."""
+    """Handle review feedback: address code changes (thumbs_up) or answer questions (eyes)."""
     issue = work.issue
     branch = tracker.get_issue_branch_name(issue)
     repo_path = settings.target_repo_path
+    all_comments = work.context["comments"]
 
-    # If ticket is In Review, transition back to In Progress
-    if issue.status == settings.jira_status_in_review:
-        if not settings.dry_run:
+    # Split comments by reaction type
+    address_comments = [c for c in all_comments if c.get("reaction") == "thumbs_up"]
+    question_comments = [c for c in all_comments if c.get("reaction") == "eyes"]
+
+    if settings.dry_run:
+        log.info("[DRY RUN] Would handle %d questions, %d code changes for %s",
+                 len(question_comments), len(address_comments), issue.key)
+        return
+
+    # Create worktree once for both operations
+    working_dir = await ensure_worktree(branch, repo_path)
+
+    # Handle questions (eyes) — no code changes, just post answers
+    if question_comments:
+        prompt = render_prompt(
+            "answer_question.md.j2",
+            issue_key=issue.key,
+            title=issue.title,
+            description=issue.description,
+            comments=question_comments,
+        )
+
+        exit_code, output = await run_tool(
+            prompt=prompt,
+            working_dir=working_dir,
+            tool=settings.tool,
+        )
+
+        if exit_code == 0 and output.strip():
+            pr_number = await github.find_pr_for_branch(branch)
+            if pr_number:
+                try:
+                    await github.post_pr_comment(pr_number, output.strip())
+                except RuntimeError:
+                    log.warning("%s: failed to post answer comment, continuing", issue.key)
+        else:
+            log.warning("%s: tool failed answering questions (exit=%d)", issue.key, exit_code)
+
+    # Handle code changes (thumbs_up) — make changes and push
+    if address_comments:
+        if issue.status == settings.jira_status_in_review:
             log.info("%s: transitioning In Review → In Progress", issue.key)
             await tracker.transition_issue(issue.key, settings.jira_status_in_progress)
-        else:
-            log.info("[DRY RUN] Would transition %s In Review → In Progress", issue.key)
 
-    if settings.dry_run:
-        log.info("[DRY RUN] Would create worktree for branch %s", branch)
-        working_dir = repo_path
-    else:
-        working_dir = await ensure_worktree(branch, repo_path)
+        prompt = render_prompt(
+            "address_changes.md.j2",
+            issue_key=issue.key,
+            title=issue.title,
+            description=issue.description,
+            comments=address_comments,
+        )
 
-    comments = work.context["comments"]
+        exit_code, output = await run_tool(
+            prompt=prompt,
+            working_dir=working_dir,
+            tool=settings.tool,
+        )
 
-    prompt = render_prompt(
-        "answer_comments.md.j2",
-        issue_key=issue.key,
-        title=issue.title,
-        description=issue.description,
-        comments=comments,
-    )
-
-    exit_code, output = await run_tool(
-        prompt=prompt,
-        working_dir=working_dir,
-        tool=settings.tool,
-        dry_run=settings.dry_run,
-    )
-
-    if exit_code != 0:
-        log.warning("%s: tool failed (exit=%d), skipping push", issue.key, exit_code)
-        if not settings.dry_run:
+        if exit_code != 0:
+            log.warning("%s: tool failed (exit=%d), skipping push", issue.key, exit_code)
             await cleanup_worktree(branch, repo_path)
-        return
+            return
 
-    if settings.dry_run:
-        log.info("[DRY RUN] Would push changes and post PR comment for %s", branch)
-        return
+        await github.push_branch(branch)
+        sha_after = await get_current_sha(working_dir)
+        loop_prevention.mark_sha_processed(sha_after)
 
-    await github.push_branch(branch)
-
-    # Post summary comment on PR listing what feedback was addressed
-    pr_number = await github.find_pr_for_branch(branch)
-    if pr_number:
-        summary_lines = ["Addressed the following review feedback:"]
-        for c in comments:
-            summary_lines.append(f"- **{c['author']}** ({c['source']}): {c['body']}")
-        try:
-            await github.post_pr_comment(pr_number, "\n".join(summary_lines))
-        except RuntimeError:
-            log.warning("%s: failed to post PR summary comment, continuing", issue.key)
-
-    sha_after = await get_current_sha(working_dir)
-    loop_prevention.mark_sha_processed(sha_after)
     await cleanup_worktree(branch, repo_path)
 
 

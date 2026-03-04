@@ -35,6 +35,7 @@ class PRComment:
     author: str
     body: str
     created_at: str
+    reaction: str  # "thumbs_up" or "eyes"
 
 
 class GitHubClient:
@@ -63,67 +64,63 @@ class GitHubClient:
         prs = json.loads(out)
         return prs[0]["number"] if prs else None
 
+    @staticmethod
+    def _parse_reacted_comments(output: str, since: str | None) -> list[PRComment]:
+        """Parse gh API output, returning only comments with thumbs_up or eyes reactions."""
+        comments: list[PRComment] = []
+        for line in output.strip().splitlines():
+            if not line:
+                continue
+            try:
+                c = json.loads(line)
+                if since and c["created_at"] <= since:
+                    continue
+                # thumbs_up takes precedence over eyes
+                if c.get("thumbs_up"):
+                    reaction = "thumbs_up"
+                elif c.get("eyes"):
+                    reaction = "eyes"
+                else:
+                    continue
+                comments.append(
+                    PRComment(
+                        id=c["id"], author=c["author"], body=c["body"],
+                        created_at=c["created_at"], reaction=reaction,
+                    )
+                )
+            except (json.JSONDecodeError, KeyError):
+                continue
+        return comments
+
     async def get_pr_comments(
         self, pr_number: int, since: str | None = None
     ) -> list[PRComment]:
         """Get review comments and issue comments on a PR."""
         comments: list[PRComment] = []
 
+        jq_filter = '.[] | {id: .id, author: .user.login, body: .body, created_at: .created_at, thumbs_up: .reactions["+1"], eyes: .reactions.eyes}'
+
         # Review comments
         out = await _run_ok(
             [
-                "gh",
-                "api",
+                "gh", "api",
                 f"/repos/{{owner}}/{{repo}}/pulls/{pr_number}/comments",
-                "--jq",
-                '.[] | {id: .id, author: .user.login, body: .body, created_at: .created_at, thumbs_up: .reactions["+1"]}',
+                "--jq", jq_filter,
             ],
             cwd=self._cwd,
         )
-        for line in out.strip().splitlines():
-            if not line:
-                continue
-            try:
-                c = json.loads(line)
-                if since and c["created_at"] <= since:
-                    continue
-                if not c.get("thumbs_up"):
-                    continue
-                comments.append(
-                    PRComment(
-                        id=c["id"], author=c["author"], body=c["body"], created_at=c["created_at"]
-                    )
-                )
-            except (json.JSONDecodeError, KeyError):
-                continue
+        comments.extend(self._parse_reacted_comments(out, since))
 
         # Issue comments on PR
         out2 = await _run_ok(
             [
-                "gh",
-                "api",
+                "gh", "api",
                 f"/repos/{{owner}}/{{repo}}/issues/{pr_number}/comments",
-                "--jq",
-                '.[] | {id: .id, author: .user.login, body: .body, created_at: .created_at, thumbs_up: .reactions["+1"]}',
+                "--jq", jq_filter,
             ],
             cwd=self._cwd,
         )
-        for line in out2.strip().splitlines():
-            if not line:
-                continue
-            try:
-                c = json.loads(line)
-                if since and c["created_at"] <= since:
-                    continue
-                if not c.get("thumbs_up"):
-                    continue
-                comments.append(
-                    PRComment(
-                        id=c["id"], author=c["author"], body=c["body"], created_at=c["created_at"]
-                    )
-                )
-            except (json.JSONDecodeError, KeyError):
-                continue
+        comments.extend(self._parse_reacted_comments(out2, since))
 
         return comments
 

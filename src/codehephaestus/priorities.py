@@ -120,50 +120,27 @@ class PriorityDispatcher:
 
                 all_comments: list[dict[str, str]] = []
 
-                # Check GitHub PR comments (only new ones since cutoff)
+                # Check GitHub PR comments (only reacted ones since cutoff)
                 if pr_number:
                     pr_comments = await self._github.get_pr_comments(
                         pr_number, since=since_str
                     )
-                    gh_new = [
-                        c for c in pr_comments if not c.author.endswith("[bot]")
-                    ]
                     log.info(
-                        "  %s: checking PR #%d for new comments (since %s)... %d new",
+                        "  %s: checking PR #%d for reacted comments (since %s)... %d found",
                         issue.key,
                         pr_number,
                         since_str or "beginning",
-                        len(gh_new),
+                        len(pr_comments),
                     )
-                    for c in gh_new:
+                    for c in pr_comments:
                         all_comments.append(
                             {
                                 "author": c.author,
                                 "body": c.body,
                                 "source": "GitHub PR",
+                                "reaction": c.reaction,
                             }
                         )
-
-                # Check Jira comments (only new ones since cutoff)
-                jira_comments = await self._tracker.get_comments(issue.key)
-                jira_new = [
-                    c for c in jira_comments
-                    if cutoff is None or (c.created and c.created > cutoff)
-                ]
-                log.info(
-                    "  %s: checking Jira comments (since %s)... %d new",
-                    issue.key,
-                    since_str or "beginning",
-                    len(jira_new),
-                )
-                for c in jira_new:
-                    all_comments.append(
-                        {
-                            "author": c.author,
-                            "body": c.body,
-                            "source": "Jira",
-                        }
-                    )
 
                 if all_comments:
                     log.info(
