@@ -2,8 +2,8 @@ package loop
 
 import (
 	"context"
-	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -11,24 +11,9 @@ import (
 	"github.com/pixxle/codehephaestus/internal/config"
 	"github.com/pixxle/codehephaestus/internal/db"
 	ghclient "github.com/pixxle/codehephaestus/internal/github"
+	"github.com/pixxle/codehephaestus/internal/statemachine"
 	"github.com/pixxle/codehephaestus/internal/tracker"
 )
-
-type Tier int
-
-const (
-	TierPlanningConversation Tier = iota + 1
-	TierReviewFeedback
-	TierCIFailure
-	TierPlanningReady
-	TierNewIssue
-)
-
-type WorkItem struct {
-	Tier    Tier
-	Issue   tracker.Issue
-	Context map[string]interface{}
-}
 
 type PriorityDispatcher struct {
 	cfg       *config.Config
@@ -36,20 +21,22 @@ type PriorityDispatcher struct {
 	github    *ghclient.Client
 	stateDB   *db.StateDB
 	loopPrev  *LoopPrevention
+	botUserID string
 }
 
-func NewPriorityDispatcher(cfg *config.Config, t tracker.TaskTracker, gh *ghclient.Client, stateDB *db.StateDB, lp *LoopPrevention) *PriorityDispatcher {
+func NewPriorityDispatcher(cfg *config.Config, t tracker.TaskTracker, gh *ghclient.Client, stateDB *db.StateDB, lp *LoopPrevention, botUserID string) *PriorityDispatcher {
 	return &PriorityDispatcher{
-		cfg:      cfg,
-		tracker:  t,
-		github:   gh,
-		stateDB:  stateDB,
-		loopPrev: lp,
+		cfg:       cfg,
+		tracker:   t,
+		github:    gh,
+		stateDB:   stateDB,
+		loopPrev:  lp,
+		botUserID: botUserID,
 	}
 }
 
 // FindWork returns the highest-priority work item, or nil if there's nothing to do.
-func (pd *PriorityDispatcher) FindWork(ctx context.Context) (*WorkItem, error) {
+func (pd *PriorityDispatcher) FindWork(ctx context.Context) (*statemachine.WorkItem, error) {
 	// Priority 1: Active planning with new human comments
 	if item, err := pd.checkPlanningConversations(ctx); err != nil {
 		log.Warn().Err(err).Msg("error checking planning conversations")
@@ -88,7 +75,7 @@ func (pd *PriorityDispatcher) FindWork(ctx context.Context) (*WorkItem, error) {
 	return nil, nil
 }
 
-func (pd *PriorityDispatcher) checkPlanningConversations(ctx context.Context) (*WorkItem, error) {
+func (pd *PriorityDispatcher) checkPlanningConversations(ctx context.Context) (*statemachine.WorkItem, error) {
 	activePlans, err := pd.stateDB.GetActivePlanningStates()
 	if err != nil {
 		return nil, err
@@ -112,24 +99,21 @@ func (pd *PriorityDispatcher) checkPlanningConversations(ctx context.Context) (*
 			continue
 		}
 
-		// Check for new human comments
 		if ps.LastSystemCommentAt != nil {
 			comments, err := pd.tracker.GetCommentsSince(ctx, issue.Key, *ps.LastSystemCommentAt)
 			if err != nil {
 				continue
 			}
-			// Filter out bot comments
 			hasHumanComment := false
 			for _, c := range comments {
-				botUserID, _ := pd.stateDB.GetFeedbackCutoff("_bot_user_id")
-				if c.Author != fmt.Sprint(botUserID) {
+				if c.Author != pd.botUserID {
 					hasHumanComment = true
 					break
 				}
 			}
 			if hasHumanComment {
-				return &WorkItem{
-					Tier:  TierPlanningConversation,
+				return &statemachine.WorkItem{
+					State: statemachine.StatePlanning,
 					Issue: issue,
 					Context: map[string]interface{}{
 						"planning_state": ps,
@@ -142,7 +126,7 @@ func (pd *PriorityDispatcher) checkPlanningConversations(ctx context.Context) (*
 	return nil, nil
 }
 
-func (pd *PriorityDispatcher) checkReviewFeedback(ctx context.Context) (*WorkItem, error) {
+func (pd *PriorityDispatcher) checkReviewFeedback(ctx context.Context) (*statemachine.WorkItem, error) {
 	inReviewIssues, err := pd.tracker.FetchIssuesByStatus(ctx, pd.cfg.StatusInReview())
 	if err != nil {
 		return nil, err
@@ -171,7 +155,6 @@ func (pd *PriorityDispatcher) checkReviewFeedback(ctx context.Context) (*WorkIte
 			continue
 		}
 
-		// Filter already-processed comments
 		var unprocessed []ghclient.PRComment
 		for _, c := range comments {
 			if !pd.loopPrev.IsCommentProcessed(strconv.FormatInt(c.ID, 10)) {
@@ -182,8 +165,8 @@ func (pd *PriorityDispatcher) checkReviewFeedback(ctx context.Context) (*WorkIte
 			continue
 		}
 
-		return &WorkItem{
-			Tier:  TierReviewFeedback,
+		return &statemachine.WorkItem{
+			State: statemachine.StateInReview,
 			Issue: issue,
 			Context: map[string]interface{}{
 				"comments":  unprocessed,
@@ -196,7 +179,7 @@ func (pd *PriorityDispatcher) checkReviewFeedback(ctx context.Context) (*WorkIte
 	return nil, nil
 }
 
-func (pd *PriorityDispatcher) checkCIFailures(ctx context.Context) (*WorkItem, error) {
+func (pd *PriorityDispatcher) checkCIFailures(ctx context.Context) (*statemachine.WorkItem, error) {
 	inProgressIssues, err := pd.tracker.FetchIssuesByStatus(ctx, pd.cfg.StatusInProgress())
 	if err != nil {
 		return nil, err
@@ -218,11 +201,8 @@ func (pd *PriorityDispatcher) checkCIFailures(ctx context.Context) (*WorkItem, e
 			continue
 		}
 
-		// Check if we already processed this SHA
-		// (would need to get the current SHA and check)
-
-		return &WorkItem{
-			Tier:  TierCIFailure,
+		return &statemachine.WorkItem{
+			State: statemachine.StateInProgress,
 			Issue: issue,
 			Context: map[string]interface{}{
 				"pr_number": prNumber,
@@ -234,13 +214,84 @@ func (pd *PriorityDispatcher) checkCIFailures(ctx context.Context) (*WorkItem, e
 	return nil, nil
 }
 
-func (pd *PriorityDispatcher) checkPlanningReady(ctx context.Context) (*WorkItem, error) {
-	// This is checked as part of planning conversations in the main loop
-	// The planner.CheckReadySignal is called during conversation handling
+func (pd *PriorityDispatcher) checkPlanningReady(ctx context.Context) (*statemachine.WorkItem, error) {
+	activePlans, err := pd.stateDB.GetActivePlanningStates()
+	if err != nil {
+		return nil, err
+	}
+
+	todoIssues, err := pd.tracker.FetchIssuesByStatus(ctx, pd.cfg.StatusTodo())
+	if err != nil {
+		return nil, err
+	}
+	issueMap := make(map[string]tracker.Issue)
+	for _, i := range todoIssues {
+		issueMap[i.Key] = i
+	}
+
+	for _, ps := range activePlans {
+		issue, ok := issueMap[ps.IssueKey]
+		if !ok {
+			continue
+		}
+		if pd.loopPrev.ShouldSkip(issue.Key) {
+			continue
+		}
+		if ps.LastSystemCommentAt == nil {
+			continue
+		}
+
+		comments, err := pd.tracker.GetCommentsSince(ctx, issue.Key, *ps.LastSystemCommentAt)
+		if err != nil {
+			continue
+		}
+		for _, c := range comments {
+			if c.Author == pd.botUserID {
+				continue
+			}
+			lower := strings.ToLower(c.Body)
+			if strings.Contains(lower, "ready") || strings.Contains(lower, "lgtm") || strings.Contains(lower, "approved") {
+				return &statemachine.WorkItem{
+					State: statemachine.StatePlanningReady,
+					Issue: issue,
+					Context: map[string]interface{}{
+						"planning_state": ps,
+					},
+				}, nil
+			}
+		}
+
+		// Check thumbs_up reaction on last system comment
+		allComments, err := pd.tracker.GetComments(ctx, issue.Key)
+		if err != nil {
+			continue
+		}
+		for _, c := range allComments {
+			if c.Author != pd.botUserID || !c.Created.Equal(*ps.LastSystemCommentAt) {
+				continue
+			}
+			reactions, err := pd.tracker.GetCommentReactions(ctx, issue.Key, c.ID)
+			if err != nil {
+				continue
+			}
+			for _, r := range reactions {
+				if r.Type == "thumbs_up" && r.UserID != pd.botUserID {
+					return &statemachine.WorkItem{
+						State: statemachine.StatePlanningReady,
+						Issue: issue,
+						Context: map[string]interface{}{
+							"planning_state": ps,
+						},
+					}, nil
+				}
+			}
+		}
+	}
+
 	return nil, nil
 }
 
-func (pd *PriorityDispatcher) checkNewIssues(ctx context.Context) (*WorkItem, error) {
+func (pd *PriorityDispatcher) checkNewIssues(ctx context.Context) (*statemachine.WorkItem, error) {
 	todoIssues, err := pd.tracker.FetchIssuesByStatus(ctx, pd.cfg.StatusTodo())
 	if err != nil {
 		return nil, err
@@ -251,17 +302,16 @@ func (pd *PriorityDispatcher) checkNewIssues(ctx context.Context) (*WorkItem, er
 			continue
 		}
 
-		// Check if this issue already has a planning state
 		ps, err := pd.stateDB.GetPlanningState(issue.Key)
 		if err != nil {
 			continue
 		}
 		if ps != nil {
-			continue // Already in planning
+			continue
 		}
 
-		return &WorkItem{
-			Tier:  TierNewIssue,
+		return &statemachine.WorkItem{
+			State: statemachine.StateTodo,
 			Issue: issue,
 		}, nil
 	}

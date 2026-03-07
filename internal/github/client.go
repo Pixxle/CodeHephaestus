@@ -168,6 +168,30 @@ func (c *Client) PushBranch(ctx context.Context, branch, cwd string) error {
 	return nil
 }
 
+// ResolveGitHubUsername attempts to map a tracker display name or email to a GitHub username
+// by searching GitHub users. Returns empty string if no match found.
+func (c *Client) ResolveGitHubUsername(ctx context.Context, nameOrEmail string) string {
+	// Try searching by email first
+	if strings.Contains(nameOrEmail, "@") {
+		out, err := c.gh(ctx, "api", "search/users", "-f", "q="+nameOrEmail+" in:email", "--jq", ".items[0].login")
+		if err == nil {
+			login := strings.TrimSpace(out)
+			if login != "" && login != "null" {
+				return login
+			}
+		}
+	}
+	// Try searching by name
+	out, err := c.gh(ctx, "api", "search/users", "-f", "q="+nameOrEmail+" in:name", "--jq", ".items[0].login")
+	if err == nil {
+		login := strings.TrimSpace(out)
+		if login != "" && login != "null" {
+			return login
+		}
+	}
+	return ""
+}
+
 func (c *Client) AddReviewers(ctx context.Context, prNumber int, usernames []string) error {
 	if len(usernames) == 0 {
 		return nil

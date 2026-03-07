@@ -9,15 +9,10 @@ import (
 )
 
 func UpdateMain(ctx context.Context, repoPath string) error {
+	// Just fetch — this updates origin/main (or origin/master) without
+	// touching the local branch, so it works even when main is checked out.
 	if err := run(ctx, repoPath, "git", "fetch", "origin"); err != nil {
 		return fmt.Errorf("fetching origin: %w", err)
-	}
-	// Update main without checking it out
-	if err := run(ctx, repoPath, "git", "fetch", "origin", "main:main"); err != nil {
-		// Try master if main doesn't exist
-		if err2 := run(ctx, repoPath, "git", "fetch", "origin", "master:master"); err2 != nil {
-			return fmt.Errorf("updating main branch: %w", err)
-		}
 	}
 	return nil
 }

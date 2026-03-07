@@ -8,7 +8,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -87,12 +86,16 @@ func (j *JiraTracker) FetchIssuesByStatus(ctx context.Context, status string) ([
 	jql := fmt.Sprintf(`project = %s AND status = "%s" AND labels = "%s" ORDER BY created ASC`,
 		j.project, status, j.label)
 
-	req, err := j.newRequest(ctx, "GET",
-		fmt.Sprintf("/rest/api/3/search?jql=%s&fields=summary,description,status,labels,created,updated", url.QueryEscape(jql)),
-		nil)
+	reqBody, _ := json.Marshal(map[string]interface{}{
+		"jql":    jql,
+		"fields": []string{"summary", "description", "status", "labels", "created", "updated"},
+	})
+
+	req, err := j.newRequest(ctx, "POST", "/rest/api/3/search/jql", bytes.NewReader(reqBody))
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := j.client.Do(req)
 	if err != nil {
@@ -109,7 +112,7 @@ func (j *JiraTracker) FetchIssuesByStatus(ctx context.Context, status string) ([
 		Issues []struct {
 			Key    string `json:"key"`
 			Fields struct {
-				Summary     string `json:"summary"`
+				Summary     string          `json:"summary"`
 				Description json.RawMessage `json:"description"`
 				Status      struct {
 					Name string `json:"name"`

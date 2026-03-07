@@ -75,9 +75,11 @@ func (s *StateDB) migrate() error {
 	err := s.db.QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&version)
 	if err != nil {
 		// Table doesn't exist yet, run all migrations
-		for _, m := range migrations {
-			if _, err := s.db.Exec(m); err != nil {
-				return fmt.Errorf("running migration: %w", err)
+		for _, stmts := range migrations {
+			for _, stmt := range stmts {
+				if _, err := s.db.Exec(stmt); err != nil {
+					return fmt.Errorf("running migration: %w", err)
+				}
 			}
 		}
 		return nil
@@ -85,8 +87,10 @@ func (s *StateDB) migrate() error {
 
 	// Run any migrations newer than current version
 	for i := version; i < len(migrations); i++ {
-		if _, err := s.db.Exec(migrations[i]); err != nil {
-			return fmt.Errorf("running migration %d: %w", i+1, err)
+		for _, stmt := range migrations[i] {
+			if _, err := s.db.Exec(stmt); err != nil {
+				return fmt.Errorf("running migration %d: %w", i+1, err)
+			}
 		}
 		if _, err := s.db.Exec("UPDATE schema_version SET version = ?", i+1); err != nil {
 			return err
