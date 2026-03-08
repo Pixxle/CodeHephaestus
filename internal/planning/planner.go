@@ -105,8 +105,8 @@ func (p *Planner) StartPlanning(ctx context.Context, issue tracker.Issue) error 
 	now := time.Now().UTC()
 	ps := &db.PlanningState{
 		IssueKey:            issue.Key,
-		ConversationJSON:    "[]",
-		ParticipantsJSON:    "[]",
+		ConversationJSON:    db.EmptyJSONArray,
+		ParticipantsJSON:    db.EmptyJSONArray,
 		Status:              StatusActive,
 		OriginalDescription: issue.Description,
 		FigmaURLsJSON:       string(figmaURLsJSON),

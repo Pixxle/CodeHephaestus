@@ -14,6 +14,9 @@ type StateDB struct {
 	db *sql.DB
 }
 
+// EmptyJSONArray is the default value for JSON array columns with no entries.
+const EmptyJSONArray = "[]"
+
 type PlanningState struct {
 	IssueKey            string
 	ConversationJSON    string

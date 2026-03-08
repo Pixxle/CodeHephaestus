@@ -21,12 +21,12 @@ type Config struct {
 	BotDisplayName string
 
 	// Tracker
-	TaskTracker    TrackerType
-	TrackerAPIKey  string
-	TrackerBaseURL string
-	TrackerProject string
+	TaskTracker          TrackerType
+	TrackerAPIKey        string
+	TrackerBaseURL       string
+	TrackerProject       string
 	TrackerPlanningLabel string
-	TrackerEmail   string // Jira only
+	TrackerEmail         string // Jira only
 
 	// Status Mapping - Jira
 	JiraStatusTodo       string
@@ -90,12 +90,12 @@ func Load(envPath string) (*Config, error) {
 	cfg := &Config{
 		BotDisplayName: envOrDefault("BOT_DISPLAY_NAME", "CodeHephaestus"),
 
-		TaskTracker:    TrackerType(envOrDefault("TASK_TRACKER", "jira")),
-		TrackerAPIKey:  os.Getenv("TRACKER_API_KEY"),
-		TrackerBaseURL: os.Getenv("TRACKER_BASE_URL"),
-		TrackerProject: os.Getenv("TRACKER_PROJECT"),
+		TaskTracker:          TrackerType(envOrDefault("TASK_TRACKER", "jira")),
+		TrackerAPIKey:        os.Getenv("TRACKER_API_KEY"),
+		TrackerBaseURL:       os.Getenv("TRACKER_BASE_URL"),
+		TrackerProject:       os.Getenv("TRACKER_PROJECT"),
 		TrackerPlanningLabel: envOrDefault("TRACKER_PLANNING_LABEL", "codehephaestus"),
-		TrackerEmail:   os.Getenv("TRACKER_EMAIL"),
+		TrackerEmail:         os.Getenv("TRACKER_EMAIL"),
 
 		JiraStatusTodo:       envOrDefault("JIRA_STATUS_TODO", "To Do"),
 		JiraStatusInProgress: envOrDefault("JIRA_STATUS_IN_PROGRESS", "In Progress"),

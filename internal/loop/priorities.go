@@ -16,12 +16,13 @@ import (
 )
 
 type PriorityDispatcher struct {
-	cfg       *config.Config
-	tracker   tracker.TaskTracker
-	github    *ghclient.Client
-	stateDB   *db.StateDB
-	loopPrev  *LoopPrevention
-	botUserID string
+	cfg           *config.Config
+	tracker       tracker.TaskTracker
+	github        *ghclient.Client
+	stateDB       *db.StateDB
+	loopPrev      *LoopPrevention
+	botUserID     string
+	lastDoneCheck time.Time
 }
 
 func NewPriorityDispatcher(cfg *config.Config, t tracker.TaskTracker, gh *ghclient.Client, stateDB *db.StateDB, lp *LoopPrevention, botUserID string) *PriorityDispatcher {
@@ -51,8 +52,11 @@ func (pd *PriorityDispatcher) FindWork(ctx context.Context) (*statemachine.WorkI
 		todoMap[i.Key] = i
 	}
 
-	// Record done tickets assigned to the bot that have no DB record yet.
-	pd.recordDoneTickets(ctx)
+	// Record done tickets periodically (every 10 minutes, not every poll cycle).
+	if time.Since(pd.lastDoneCheck) >= 10*time.Minute {
+		pd.recordDoneTickets(ctx)
+		pd.lastDoneCheck = time.Now()
+	}
 
 	// Priority 1: Active planning with new human comments
 	if item, err := pd.checkPlanningConversations(ctx, activePlans, todoMap); err != nil {
@@ -289,8 +293,8 @@ func (pd *PriorityDispatcher) recordDoneTickets(ctx context.Context) {
 
 		ps := &db.PlanningState{
 			IssueKey:         issue.Key,
-			ConversationJSON: "[]",
-			ParticipantsJSON: "[]",
+			ConversationJSON: db.EmptyJSONArray,
+			ParticipantsJSON: db.EmptyJSONArray,
 			Status:           planning.StatusComplete,
 			CreatedAt:        now,
 			UpdatedAt:        now,
