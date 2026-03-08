@@ -14,7 +14,7 @@ Autonomous coding agent that picks up tracker issues, runs an interactive planni
 
 ## Prerequisites
 
-- [Go](https://go.dev/dl/) 1.22+
+- [Go](https://go.dev/dl/) 1.26+
 - [Claude Code CLI](https://claude.ai/code) (`claude`) — installed and authenticated
 - [GitHub CLI](https://cli.github.com) (`gh`) — installed and authenticated
 - A Jira project with issues labeled for the bot
@@ -29,10 +29,12 @@ cp .env.example .env  # fill in your credentials
 ## Usage
 
 ```
-./codehephaestus              # Run continuously
-./codehephaestus --once       # Single iteration
-./codehephaestus --dry-run    # Show what would be done
-./codehephaestus --verbose    # Debug logging
+./codehephaestus                       # Run continuously
+./codehephaestus --once                # Single iteration
+./codehephaestus --dry-run             # Show what would be done
+./codehephaestus --verbose             # Debug logging
+./codehephaestus --max-iterations 5    # Limit to N iterations
+./codehephaestus --config path/.env    # Custom .env file path
 ```
 
 ## Configuration
@@ -45,11 +47,17 @@ Key variables:
 |---|---|
 | `TASK_TRACKER` | `jira` (Linear support planned) |
 | `TRACKER_API_KEY` | Jira API token |
+| `TRACKER_BASE_URL` | Jira instance URL (e.g. `https://org.atlassian.net`) |
 | `TRACKER_PROJECT` | Jira project key |
+| `TRACKER_EMAIL` | Email for Jira basic auth |
 | `TRACKER_LABEL` | Label that marks issues for the bot |
 | `BOT_DISPLAY_NAME` | Name used in comments and PRs (default: `CodeHephaestus`) |
 | `PLANNING_MODEL` | Model for planning conversations (default: `sonnet`) |
 | `TEAM_LEAD_MODEL` | Model for the team lead (default: `opus`) |
+| `FIGMA_ACCESS_TOKEN` | Optional — enables Figma design extraction |
+| `TARGET_REPO_PATH` | Path to the repo to work on (default: `.`) |
+
+Requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in your environment for multi-agent implementation.
 
 ## License
 
