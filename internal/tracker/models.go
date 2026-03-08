@@ -27,6 +27,16 @@ func (i Issue) IsAssignedTo(userID string) bool {
 	return false
 }
 
+// HasLabel reports whether the issue has the given label.
+func (i Issue) HasLabel(label string) bool {
+	for _, l := range i.Labels {
+		if l == label {
+			return true
+		}
+	}
+	return false
+}
+
 type Comment struct {
 	ID      string
 	Author  string

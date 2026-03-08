@@ -230,26 +230,23 @@ func (pd *PriorityDispatcher) checkPlanningReady(ctx context.Context, activePlan
 			continue
 		}
 
-		// Check thumbs_up reaction on the bot's comment directly by ID
-		if ps.BotCommentID != "" {
-			reactions, err := pd.tracker.GetCommentReactions(ctx, issue.Key, ps.BotCommentID)
-			if err == nil {
-				for _, r := range reactions {
-					if r.Type == "thumbs_up" {
-						if !issue.IsAssignedTo(pd.botUserID) {
-							log.Debug().Str("issue", issue.Key).Msg("thumbs-up detected but issue not assigned to bot, staying in planning")
-							break
-						}
-						return &statemachine.WorkItem{
-							State: statemachine.StatePlanningReady,
-							Issue: issue,
-							Context: map[string]interface{}{
-								"planning_state": ps,
-							},
-						}, nil
-					}
-				}
+		ready, err := pd.tracker.IsReadySignal(ctx, issue, ps.BotCommentID)
+		if err != nil {
+			log.Warn().Err(err).Str("issue", issue.Key).Msg("error checking ready signal")
+			continue
+		}
+		if ready {
+			if !issue.IsAssignedTo(pd.botUserID) {
+				log.Debug().Str("issue", issue.Key).Msg("ready signal detected but issue not assigned to bot, staying in planning")
+				continue
 			}
+			return &statemachine.WorkItem{
+				State: statemachine.StatePlanningReady,
+				Issue: issue,
+				Context: map[string]interface{}{
+					"planning_state": ps,
+				},
+			}, nil
 		}
 	}
 
@@ -328,10 +325,15 @@ func (pd *PriorityDispatcher) recordDoneTickets(ctx context.Context) {
 //     Mark planning complete (stale).
 func (pd *PriorityDispatcher) reconcileTrackerState(ctx context.Context, allStates []*db.PlanningState, todoMap map[string]tracker.Issue) {
 	for _, ps := range allStates {
-		_, inTodo := todoMap[ps.IssueKey]
+		issue, inTodo := todoMap[ps.IssueKey]
 
 		if inTodo && ps.Status != planning.StatusActive {
 			// Rule 1: reopened ticket — clear old state so it starts fresh.
+			if ready, _ := pd.tracker.IsReadySignal(ctx, issue, ps.BotCommentID); ready {
+				if err := pd.tracker.ClearReadySignal(ctx, ps.IssueKey); err != nil {
+					log.Warn().Err(err).Str("issue", ps.IssueKey).Msg("reconcile: failed to clear ready signal (best-effort)")
+				}
+			}
 			if ps.BotCommentID != "" {
 				if err := pd.tracker.DeleteComment(ctx, ps.IssueKey, ps.BotCommentID); err != nil {
 					log.Warn().Err(err).Str("issue", ps.IssueKey).Msg("reconcile: failed to delete old bot comment (best-effort)")

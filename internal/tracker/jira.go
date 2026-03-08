@@ -19,23 +19,25 @@ import (
 )
 
 type JiraTracker struct {
-	baseURL  string
-	email    string
-	apiKey   string
-	project  string
-	label    string
-	client   *http.Client
-	statuses map[string]string // friendly name -> Jira status name
+	baseURL       string
+	email         string
+	apiKey        string
+	project       string
+	label         string
+	approvalLabel string
+	client        *http.Client
+	statuses      map[string]string // friendly name -> Jira status name
 }
 
 func NewJiraTracker(cfg *config.Config) (*JiraTracker, error) {
 	return &JiraTracker{
-		baseURL: strings.TrimRight(cfg.TrackerBaseURL, "/"),
-		email:   cfg.TrackerEmail,
-		apiKey:  cfg.TrackerAPIKey,
-		project: cfg.TrackerProject,
-		label:   cfg.TrackerPlanningLabel,
-		client:  &http.Client{Timeout: 30 * time.Second},
+		baseURL:       strings.TrimRight(cfg.TrackerBaseURL, "/"),
+		email:         cfg.JiraEmail,
+		apiKey:        cfg.TrackerAPIKey,
+		project:       cfg.TrackerProject,
+		label:         cfg.JiraPlanningLabel,
+		approvalLabel: cfg.JiraApprovalLabel,
+		client:        &http.Client{Timeout: 30 * time.Second},
 		statuses: map[string]string{
 			"todo":        cfg.JiraStatusTodo,
 			"in_progress": cfg.JiraStatusInProgress,
@@ -481,6 +483,40 @@ func (j *JiraTracker) DownloadAttachment(ctx context.Context, url string) ([]byt
 		return nil, "", err
 	}
 	return data, resp.Header.Get("Content-Type"), nil
+}
+
+func (j *JiraTracker) IsReadySignal(_ context.Context, issue Issue, _ string) (bool, error) {
+	return issue.HasLabel(j.approvalLabel), nil
+}
+
+func (j *JiraTracker) ReadySignalInstruction() string {
+	return fmt.Sprintf("add the `%s` label to begin implementation", j.approvalLabel)
+}
+
+func (j *JiraTracker) ClearReadySignal(ctx context.Context, issueKey string) error {
+	body := map[string]interface{}{
+		"update": map[string]interface{}{
+			"labels": []map[string]string{
+				{"remove": j.approvalLabel},
+			},
+		},
+	}
+	b, _ := json.Marshal(body)
+	req, err := j.newRequest(ctx, "PUT", fmt.Sprintf("/rest/api/3/issue/%s", issueKey), bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := j.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("removing approval label failed (status %d): %s", resp.StatusCode, string(respBody))
+	}
+	return nil
 }
 
 func (j *JiraTracker) newRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {

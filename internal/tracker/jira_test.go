@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -235,6 +236,35 @@ func TestSplitTableRow(t *testing.T) {
 			got := splitTableRow(tt.input)
 			if len(got) != tt.want {
 				t.Errorf("splitTableRow(%q) returned %d cells, want %d", tt.input, len(got), tt.want)
+			}
+		})
+	}
+}
+
+func TestIsReadySignal(t *testing.T) {
+	j := &JiraTracker{approvalLabel: "approved"}
+	ctx := context.Background()
+
+	tests := []struct {
+		name   string
+		labels []string
+		want   bool
+	}{
+		{"no labels", nil, false},
+		{"other labels", []string{"bug", "frontend"}, false},
+		{"has approval label", []string{"bug", "approved"}, true},
+		{"wrong case", []string{"Approved"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			issue := Issue{Key: "TEST-1", Labels: tt.labels}
+			got, err := j.IsReadySignal(ctx, issue, "12345")
+			if err != nil {
+				t.Fatalf("IsReadySignal() error = %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("IsReadySignal() = %v, want %v", got, tt.want)
 			}
 		})
 	}

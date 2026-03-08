@@ -23,6 +23,9 @@ type TaskTracker interface {
 	UpdateDescription(ctx context.Context, issueKey string, description string, attachments []Attachment) error
 	GetAttachments(ctx context.Context, issueKey string) ([]Attachment, error)
 	DownloadAttachment(ctx context.Context, url string) ([]byte, string, error)
+	IsReadySignal(ctx context.Context, issue Issue, botCommentID string) (bool, error)
+	ClearReadySignal(ctx context.Context, issueKey string) error
+	ReadySignalInstruction() string
 }
 
 func NewTracker(cfg *config.Config) (TaskTracker, error) {

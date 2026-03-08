@@ -88,7 +88,7 @@ func TestLoad_ValidationErrors(t *testing.T) {
 				"TRACKER_API_KEY":  "key",
 				"TRACKER_BASE_URL": "https://example.com",
 				"TRACKER_PROJECT":  "TEST",
-				"TRACKER_EMAIL":    "test@example.com",
+				"JIRA_EMAIL":       "test@example.com",
 			},
 			wantErr: "TASK_TRACKER must be 'jira' or 'linear'",
 		},
@@ -98,7 +98,7 @@ func TestLoad_ValidationErrors(t *testing.T) {
 				"TASK_TRACKER":     "jira",
 				"TRACKER_BASE_URL": "https://example.com",
 				"TRACKER_PROJECT":  "TEST",
-				"TRACKER_EMAIL":    "test@example.com",
+				"JIRA_EMAIL":       "test@example.com",
 			},
 			wantErr: "TRACKER_API_KEY is required",
 		},
@@ -108,7 +108,7 @@ func TestLoad_ValidationErrors(t *testing.T) {
 				"TASK_TRACKER":    "jira",
 				"TRACKER_API_KEY": "key",
 				"TRACKER_PROJECT": "TEST",
-				"TRACKER_EMAIL":   "test@example.com",
+				"JIRA_EMAIL":      "test@example.com",
 			},
 			wantErr: "TRACKER_BASE_URL is required",
 		},
@@ -118,7 +118,7 @@ func TestLoad_ValidationErrors(t *testing.T) {
 				"TASK_TRACKER":     "jira",
 				"TRACKER_API_KEY":  "key",
 				"TRACKER_BASE_URL": "https://example.com",
-				"TRACKER_EMAIL":    "test@example.com",
+				"JIRA_EMAIL":       "test@example.com",
 			},
 			wantErr: "TRACKER_PROJECT is required",
 		},
@@ -130,7 +130,7 @@ func TestLoad_ValidationErrors(t *testing.T) {
 				"TRACKER_BASE_URL": "https://example.com",
 				"TRACKER_PROJECT":  "TEST",
 			},
-			wantErr: "TRACKER_EMAIL is required for Jira",
+			wantErr: "JIRA_EMAIL is required for Jira",
 		},
 	}
 
@@ -142,7 +142,7 @@ func TestLoad_ValidationErrors(t *testing.T) {
 			// Clear all relevant env vars first
 			for _, key := range []string{
 				"TASK_TRACKER", "TRACKER_API_KEY", "TRACKER_BASE_URL",
-				"TRACKER_PROJECT", "TRACKER_EMAIL", "TRACKER_PLANNING_LABEL",
+				"TRACKER_PROJECT", "JIRA_EMAIL", "JIRA_PLANNING_LABEL",
 				"BOT_DISPLAY_NAME",
 			} {
 				t.Setenv(key, "")
@@ -171,12 +171,12 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("TRACKER_API_KEY", "test-key")
 	t.Setenv("TRACKER_BASE_URL", "https://jira.example.com")
 	t.Setenv("TRACKER_PROJECT", "TEST")
-	t.Setenv("TRACKER_EMAIL", "bot@example.com")
+	t.Setenv("JIRA_EMAIL", "bot@example.com")
 
 	// Clear env vars that have defaults to test the defaults
 	for _, key := range []string{
-		"BOT_DISPLAY_NAME", "TRACKER_PLANNING_LABEL", "PLANNING_MODEL",
-		"POLL_INTERVAL", "MAX_REVIEW_ROUNDS",
+		"BOT_DISPLAY_NAME", "JIRA_PLANNING_LABEL", "JIRA_APPROVAL_LABEL",
+		"PLANNING_MODEL", "POLL_INTERVAL", "MAX_REVIEW_ROUNDS",
 	} {
 		t.Setenv(key, "")
 	}
@@ -189,8 +189,11 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.BotDisplayName != "CodeHephaestus" {
 		t.Errorf("BotDisplayName = %q, want %q", cfg.BotDisplayName, "CodeHephaestus")
 	}
-	if cfg.TrackerPlanningLabel != "codehephaestus" {
-		t.Errorf("TrackerPlanningLabel = %q, want %q", cfg.TrackerPlanningLabel, "codehephaestus")
+	if cfg.JiraPlanningLabel != "codehephaestus" {
+		t.Errorf("JiraPlanningLabel = %q, want %q", cfg.JiraPlanningLabel, "codehephaestus")
+	}
+	if cfg.JiraApprovalLabel != "approved" {
+		t.Errorf("JiraApprovalLabel = %q, want %q", cfg.JiraApprovalLabel, "approved")
 	}
 	if cfg.PlanningModel != "sonnet" {
 		t.Errorf("PlanningModel = %q, want %q", cfg.PlanningModel, "sonnet")

@@ -49,8 +49,9 @@ Key variables:
 | `TRACKER_API_KEY` | Jira API token |
 | `TRACKER_BASE_URL` | Jira instance URL (e.g. `https://org.atlassian.net`) |
 | `TRACKER_PROJECT` | Jira project key |
-| `TRACKER_EMAIL` | Email for Jira basic auth |
-| `TRACKER_PLANNING_LABEL` | Label that marks issues for planning (default: `codehephaestus`) |
+| `JIRA_EMAIL` | Email for Jira basic auth |
+| `JIRA_PLANNING_LABEL` | Label that marks issues for planning (default: `codehephaestus`) |
+| `JIRA_APPROVAL_LABEL` | Label to signal planning approval (default: `approved`) |
 | `BOT_DISPLAY_NAME` | Name used in comments and PRs (default: `CodeHephaestus`) |
 | `PLANNING_MODEL` | Model for planning conversations (default: `sonnet`) |
 | `TEAM_LEAD_MODEL` | Model for the team lead (default: `opus`) |

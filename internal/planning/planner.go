@@ -67,11 +67,12 @@ func (p *Planner) StartPlanning(ctx context.Context, issue tracker.Issue) error 
 
 	// Generate initial planning comment via claude
 	prompt, err := worker.RenderPrompt("planning_initial.md.tmpl", map[string]interface{}{
-		"IssueKey":       issue.Key,
-		"IssueTitle":     issue.Title,
-		"Description":    issue.Description,
-		"BotDisplayName": p.cfg.BotDisplayName,
-		"Images":         images,
+		"IssueKey":         issue.Key,
+		"IssueTitle":       issue.Title,
+		"Description":      issue.Description,
+		"BotDisplayName":   p.cfg.BotDisplayName,
+		"Images":           images,
+		"ReadyInstruction": p.tracker.ReadySignalInstruction(),
 	})
 	if err != nil {
 		return fmt.Errorf("rendering planning prompt: %w", err)
@@ -146,6 +147,7 @@ func (p *Planner) ContinuePlanning(ctx context.Context, issue tracker.Issue, ps 
 		"CurrentDescription":  issue.Description,
 		"OpenQuestions":       openQuestions,
 		"BotDisplayName":      p.cfg.BotDisplayName,
+		"ReadyInstruction":    p.tracker.ReadySignalInstruction(),
 	})
 	if err != nil {
 		return fmt.Errorf("rendering follow-up prompt: %w", err)
@@ -199,20 +201,9 @@ func (p *Planner) ContinuePlanning(ctx context.Context, issue tracker.Issue, ps 
 	return nil
 }
 
-// CheckReadySignal detects if a human has signalled readiness via thumbs-up reaction on the bot's comment.
+// CheckReadySignal detects if a human has signalled readiness for implementation.
 func (p *Planner) CheckReadySignal(ctx context.Context, issue tracker.Issue, ps *db.PlanningState) (bool, error) {
-	if ps.BotCommentID != "" {
-		reactions, err := p.tracker.GetCommentReactions(ctx, issue.Key, ps.BotCommentID)
-		if err == nil {
-			for _, r := range reactions {
-				if r.Type == "thumbs_up" {
-					return true, nil
-				}
-			}
-		}
-	}
-
-	return false, nil
+	return p.tracker.IsReadySignal(ctx, issue, ps.BotCommentID)
 }
 
 // CompletePlanning finalizes the planning phase. The description IS the spec,
@@ -226,6 +217,13 @@ func (p *Planner) CompletePlanning(ctx context.Context, issue tracker.Issue, ps 
 			p.cfg.BotDisplayName)
 		if err := p.tracker.UpdateComment(ctx, issue.Key, ps.BotCommentID, finalComment); err != nil {
 			log.Warn().Err(err).Msg("failed to update bot comment for completion")
+		}
+	}
+
+	// Clear the ready signal if present (best-effort, avoids unnecessary API call)
+	if ready, _ := p.tracker.IsReadySignal(ctx, issue, ps.BotCommentID); ready {
+		if err := p.tracker.ClearReadySignal(ctx, issue.Key); err != nil {
+			log.Warn().Err(err).Str("issue", issue.Key).Msg("failed to clear ready signal after completing planning")
 		}
 	}
 
@@ -256,8 +254,8 @@ func (p *Planner) CheckTimeout(ctx context.Context, issue tracker.Issue, ps *db.
 
 	if daysSinceActivity >= reminderDays {
 		if !p.cfg.DryRun {
-			reminder := fmt.Sprintf("## %s — Reminder\n\nThis planning conversation has been waiting for a response for %d days. Please update the issue description to continue or react with :+1: to begin implementation with the current plan.",
-				p.cfg.BotDisplayName, int(daysSinceActivity))
+			reminder := fmt.Sprintf("## %s — Reminder\n\nThis planning conversation has been waiting for a response for %d days. Please update the issue description to continue or %s.",
+				p.cfg.BotDisplayName, int(daysSinceActivity), p.tracker.ReadySignalInstruction())
 			return p.tracker.AddComment(ctx, issue.Key, reminder)
 		}
 	}
