@@ -172,6 +172,14 @@ func (h *Handlers) CheckMergedPRs(ctx context.Context) {
 			if !h.m.cfg.DryRun {
 				_ = h.m.tracker.TransitionIssue(ctx, issue.Key, h.m.cfg.StatusDone())
 				_ = git.CleanupWorktree(ctx, branch, h.m.cfg.TargetRepoPath, h.m.cfg.WorktreePath)
+				ps, psErr := h.m.stateDB.GetPlanningState(issue.Key)
+				if psErr != nil {
+					log.Warn().Err(psErr).Str("issue", issue.Key).Msg("failed to fetch planning state for comment cleanup")
+				} else if ps != nil && ps.BotCommentID != "" {
+					if err := h.m.tracker.DeleteComment(ctx, issue.Key, ps.BotCommentID); err != nil {
+						log.Warn().Err(err).Str("issue", issue.Key).Msg("failed to delete bot comment on merge")
+					}
+				}
 			}
 		}
 	}
