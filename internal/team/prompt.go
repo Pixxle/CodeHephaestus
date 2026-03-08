@@ -8,15 +8,15 @@ import (
 )
 
 type TeamLeadContext struct {
-	IssueKey            string
-	IssueTitle          string
-	Specification       string
-	AcceptanceCriteria  string
-	EdgeCases           string
+	IssueKey             string
+	IssueTitle           string
+	Specification        string
+	AcceptanceCriteria   string
+	EdgeCases            string
 	PlanningConversation string
-	BotDisplayName      string
-	ImagePaths          []string
-	MaxReviewRounds     int
+	BotDisplayName       string
+	ImagePaths           []string
+	MaxReviewRounds      int
 }
 
 // BuildTeamLeadPrompt constructs the prompt for the team lead session.

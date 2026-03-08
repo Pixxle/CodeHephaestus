@@ -41,9 +41,9 @@ type Config struct {
 	LinearStatusDone       string
 
 	// Claude Code
-	TeamLeadModel  string
-	TeammateModel  string
-	PlanningModel  string
+	TeamLeadModel string
+	TeammateModel string
+	PlanningModel string
 
 	// Planning
 	PlanningCommentCooldown int
@@ -51,8 +51,8 @@ type Config struct {
 	PlanningTimeoutAction   string
 
 	// Figma
-	FigmaAccessToken string
-	FigmaExportScale int
+	FigmaAccessToken  string
+	FigmaExportScale  int
 	FigmaExportFormat string
 
 	// Implementation

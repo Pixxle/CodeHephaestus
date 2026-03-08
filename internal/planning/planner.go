@@ -141,7 +141,7 @@ func (p *Planner) ContinuePlanning(ctx context.Context, issue tracker.Issue, ps 
 		"IssueTitle":          issue.Title,
 		"PreviousDescription": ps.LastSeenDescription,
 		"CurrentDescription":  issue.Description,
-		"OpenQuestions":        openQuestions,
+		"OpenQuestions":       openQuestions,
 		"BotDisplayName":      p.cfg.BotDisplayName,
 	})
 	if err != nil {

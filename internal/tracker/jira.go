@@ -628,8 +628,8 @@ func adfTaskItem(checked bool, text string) map[string]interface{} {
 		state = "DONE"
 	}
 	return map[string]interface{}{
-		"type":  "taskItem",
-		"attrs": map[string]interface{}{"localId": "", "state": state},
+		"type":    "taskItem",
+		"attrs":   map[string]interface{}{"localId": "", "state": state},
 		"content": adfInlineMarkdown(text),
 	}
 }
@@ -640,7 +640,7 @@ var (
 	taskRe     = regexp.MustCompile(`^\[[ xX]\]\s*`)
 )
 
-func isBulletLine(line string) bool  { return bulletRe.MatchString(line) }
+func isBulletLine(line string) bool   { return bulletRe.MatchString(line) }
 func isNumberedLine(line string) bool { return numberedRe.MatchString(line) }
 
 func stripBullet(line string) string {
