@@ -82,12 +82,15 @@ func (p *Planner) StartPlanning(ctx context.Context, issue tracker.Issue) error 
 		return fmt.Errorf("running planning claude: %w", err)
 	}
 
+	// Strip any preamble text that leaks from tool use in --print mode
+	cleanOutput := stripPreamble(result.Output, p.cfg.BotDisplayName)
+
 	// Parse questions from AI output
-	questions := parseQuestions(result.Output)
+	questions := parseQuestions(cleanOutput)
 	questionsJSON, _ := json.Marshal(questions)
 
 	// Ensure heading reflects question state — AI may not always comply with template instructions
-	output := ensureCorrectHeading(result.Output, len(questions) == 0, p.cfg.BotDisplayName)
+	output := ensureCorrectHeading(cleanOutput, len(questions) == 0, p.cfg.BotDisplayName)
 
 	// Post the comment and capture its ID
 	var botCommentID string
@@ -153,12 +156,15 @@ func (p *Planner) ContinuePlanning(ctx context.Context, issue tracker.Issue, ps 
 		return fmt.Errorf("running planning follow-up: %w", err)
 	}
 
+	// Strip any preamble text that leaks from tool use in --print mode
+	cleanOutput := stripPreamble(result.Output, p.cfg.BotDisplayName)
+
 	// Parse remaining questions from output
-	remainingQuestions := parseQuestions(result.Output)
+	remainingQuestions := parseQuestions(cleanOutput)
 	questionsJSON, _ := json.Marshal(remainingQuestions)
 
 	// Ensure heading reflects question state
-	output := ensureCorrectHeading(result.Output, len(remainingQuestions) == 0, p.cfg.BotDisplayName)
+	output := ensureCorrectHeading(cleanOutput, len(remainingQuestions) == 0, p.cfg.BotDisplayName)
 
 	// Update comment in-place; fallback to new comment if update fails
 	if !p.cfg.DryRun {
@@ -387,6 +393,18 @@ func (p *Planner) collectImages(ctx context.Context, issue tracker.Issue) ([]str
 	}
 
 	return imagePaths, nil
+}
+
+// stripPreamble removes any text before the expected heading.
+// When claude --print is used with tool use, intermediate text output
+// (e.g. "Let me read the images...") leaks into stdout before the actual comment.
+func stripPreamble(output, botName string) string {
+	marker := fmt.Sprintf("## %s — ", botName)
+	idx := strings.Index(output, marker)
+	if idx > 0 {
+		return output[idx:]
+	}
+	return output
 }
 
 // ensureCorrectHeading fixes the comment heading to match the question state.

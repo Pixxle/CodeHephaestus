@@ -157,6 +157,50 @@ func TestEnsureCorrectHeading(t *testing.T) {
 	}
 }
 
+func TestStripPreamble(t *testing.T) {
+	botName := "claes"
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "no preamble",
+			input: "## claes — Planning\n### Understanding\nSome content",
+			want:  "## claes — Planning\n### Understanding\nSome content",
+		},
+		{
+			name:  "with preamble from tool use",
+			input: "Now I have a thorough understanding of the codebase and the visual requirements. Let me compose the planning comment.\n## claes — Planning\n### Understanding\nSome content",
+			want:  "## claes — Planning\n### Understanding\nSome content",
+		},
+		{
+			name:  "multi-line preamble",
+			input: "Let me read these images first.\n\nOk, I can see the mockups.\n\n## claes — Planning Complete\n### Understanding\nDone",
+			want:  "## claes — Planning Complete\n### Understanding\nDone",
+		},
+		{
+			name:  "no heading at all",
+			input: "Some random output with no heading",
+			want:  "Some random output with no heading",
+		},
+		{
+			name:  "heading at very start",
+			input: "## claes — Planning\nContent",
+			want:  "## claes — Planning\nContent",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripPreamble(tt.input, botName)
+			if got != tt.want {
+				t.Errorf("stripPreamble() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsImageMime(t *testing.T) {
 	tests := []struct {
 		mime string
