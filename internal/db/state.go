@@ -84,6 +84,13 @@ func (s *StateDB) migrate() error {
 				}
 			}
 		}
+		// Ensure version reflects the final schema (v1 INSERT sets 1,
+		// but we may have run further migrations beyond v1)
+		if schemaVersion > 1 {
+			if _, err := s.db.Exec("UPDATE schema_version SET version = ?", schemaVersion); err != nil {
+				return fmt.Errorf("setting schema version: %w", err)
+			}
+		}
 		return nil
 	}
 
