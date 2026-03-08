@@ -224,6 +224,10 @@ func (pd *PriorityDispatcher) checkPlanningReady(ctx context.Context, activePlan
 					}
 					lower := strings.ToLower(c.Body)
 					if strings.Contains(lower, "ready") || strings.Contains(lower, "lgtm") || strings.Contains(lower, "approved") {
+						if !issue.IsAssignedTo(pd.botUserID) {
+							log.Debug().Str("issue", issue.Key).Msg("ready signal detected but issue not assigned to bot, staying in planning")
+							continue
+						}
 						return &statemachine.WorkItem{
 							State: statemachine.StatePlanningReady,
 							Issue: issue,
@@ -242,6 +246,10 @@ func (pd *PriorityDispatcher) checkPlanningReady(ctx context.Context, activePlan
 			if err == nil {
 				for _, r := range reactions {
 					if r.Type == "thumbs_up" && r.UserID != pd.botUserID {
+						if !issue.IsAssignedTo(pd.botUserID) {
+							log.Debug().Str("issue", issue.Key).Msg("thumbs-up detected but issue not assigned to bot, staying in planning")
+							break
+						}
 						return &statemachine.WorkItem{
 							State: statemachine.StatePlanningReady,
 							Issue: issue,

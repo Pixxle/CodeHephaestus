@@ -12,8 +12,19 @@ type Issue struct {
 	Description string
 	Status      string
 	Labels      []string
+	Assignees   []string
 	Created     time.Time
 	Updated     time.Time
+}
+
+// IsAssignedTo reports whether the issue is assigned to the given user ID.
+func (i Issue) IsAssignedTo(userID string) bool {
+	for _, a := range i.Assignees {
+		if a == userID {
+			return true
+		}
+	}
+	return false
 }
 
 type Comment struct {

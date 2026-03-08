@@ -33,7 +33,7 @@ func NewJiraTracker(cfg *config.Config) (*JiraTracker, error) {
 		email:   cfg.TrackerEmail,
 		apiKey:  cfg.TrackerAPIKey,
 		project: cfg.TrackerProject,
-		label:   cfg.TrackerLabel,
+		label:   cfg.TrackerPlanningLabel,
 		client:  &http.Client{Timeout: 30 * time.Second},
 		statuses: map[string]string{
 			"todo":        cfg.JiraStatusTodo,
@@ -83,12 +83,12 @@ func (j *JiraTracker) ResolveCurrentUser(ctx context.Context) (string, error) {
 }
 
 func (j *JiraTracker) FetchIssuesByStatus(ctx context.Context, status string) ([]Issue, error) {
-	jql := fmt.Sprintf(`project = %s AND status = "%s" AND labels = "%s" ORDER BY created ASC`,
+	jql := fmt.Sprintf(`project = %s AND status = "%s" AND (labels = "%s" OR assignee = currentUser()) ORDER BY created ASC`,
 		j.project, status, j.label)
 
 	reqBody, _ := json.Marshal(map[string]interface{}{
 		"jql":    jql,
-		"fields": []string{"summary", "description", "status", "labels", "created", "updated"},
+		"fields": []string{"summary", "description", "status", "labels", "assignee", "created", "updated"},
 	})
 
 	req, err := j.newRequest(ctx, "POST", "/rest/api/3/search/jql", bytes.NewReader(reqBody))
@@ -117,9 +117,12 @@ func (j *JiraTracker) FetchIssuesByStatus(ctx context.Context, status string) ([
 				Status      struct {
 					Name string `json:"name"`
 				} `json:"status"`
-				Labels  []string `json:"labels"`
-				Created string   `json:"created"`
-				Updated string   `json:"updated"`
+				Labels   []string `json:"labels"`
+				Assignee *struct {
+					AccountID string `json:"accountId"`
+				} `json:"assignee"`
+				Created string `json:"created"`
+				Updated string `json:"updated"`
 			} `json:"fields"`
 		} `json:"issues"`
 	}
@@ -131,12 +134,17 @@ func (j *JiraTracker) FetchIssuesByStatus(ctx context.Context, status string) ([
 	var issues []Issue
 	for _, i := range result.Issues {
 		desc := extractADFText(i.Fields.Description)
+		var assignees []string
+		if i.Fields.Assignee != nil && i.Fields.Assignee.AccountID != "" {
+			assignees = []string{i.Fields.Assignee.AccountID}
+		}
 		issues = append(issues, Issue{
 			Key:         i.Key,
 			Title:       i.Fields.Summary,
 			Description: desc,
 			Status:      i.Fields.Status.Name,
 			Labels:      i.Fields.Labels,
+			Assignees:   assignees,
 			Created:     parseJiraTime(i.Fields.Created),
 			Updated:     parseJiraTime(i.Fields.Updated),
 		})

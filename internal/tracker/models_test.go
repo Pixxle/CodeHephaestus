@@ -6,6 +6,28 @@ import (
 	"time"
 )
 
+func TestIsAssignedTo(t *testing.T) {
+	issue := Issue{
+		Key:       "TEST-1",
+		Assignees: []string{"user-123", "user-456"},
+	}
+
+	if !issue.IsAssignedTo("user-123") {
+		t.Error("expected IsAssignedTo to return true for user-123")
+	}
+	if !issue.IsAssignedTo("user-456") {
+		t.Error("expected IsAssignedTo to return true for user-456")
+	}
+	if issue.IsAssignedTo("user-999") {
+		t.Error("expected IsAssignedTo to return false for user-999")
+	}
+
+	empty := Issue{Key: "TEST-2"}
+	if empty.IsAssignedTo("user-123") {
+		t.Error("expected IsAssignedTo to return false for nil assignees")
+	}
+}
+
 func TestFormatConversation(t *testing.T) {
 	now := time.Now()
 	comments := []Comment{

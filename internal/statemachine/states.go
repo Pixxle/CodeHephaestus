@@ -39,7 +39,7 @@ type Transition struct {
 // ValidTransitions defines all allowed state transitions per the spec §2.2.
 // Note: These use tracker-level concepts (not dispatch states like StateCIFailure).
 var ValidTransitions = []Transition{
-	{StateTodo, StatePlanning, "issue detected with configured label"},
+	{StateTodo, StatePlanning, "issue detected with planning label or assignment"},
 	{StatePlanning, StatePlanning, "new question posted or human replies"},
 	{StatePlanning, StatePlanningReady, "human signals ready for development"},
 	{StatePlanningReady, "in_progress", "description updated, implementation begins"},

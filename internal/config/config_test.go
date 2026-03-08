@@ -142,7 +142,7 @@ func TestLoad_ValidationErrors(t *testing.T) {
 			// Clear all relevant env vars first
 			for _, key := range []string{
 				"TASK_TRACKER", "TRACKER_API_KEY", "TRACKER_BASE_URL",
-				"TRACKER_PROJECT", "TRACKER_EMAIL", "TRACKER_LABEL",
+				"TRACKER_PROJECT", "TRACKER_EMAIL", "TRACKER_PLANNING_LABEL",
 				"BOT_DISPLAY_NAME",
 			} {
 				t.Setenv(key, "")
@@ -175,7 +175,7 @@ func TestLoad_Defaults(t *testing.T) {
 
 	// Clear env vars that have defaults to test the defaults
 	for _, key := range []string{
-		"BOT_DISPLAY_NAME", "TRACKER_LABEL", "PLANNING_MODEL",
+		"BOT_DISPLAY_NAME", "TRACKER_PLANNING_LABEL", "PLANNING_MODEL",
 		"POLL_INTERVAL", "MAX_REVIEW_ROUNDS",
 	} {
 		t.Setenv(key, "")
@@ -189,8 +189,8 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.BotDisplayName != "CodeHephaestus" {
 		t.Errorf("BotDisplayName = %q, want %q", cfg.BotDisplayName, "CodeHephaestus")
 	}
-	if cfg.TrackerLabel != "codehephaestus" {
-		t.Errorf("TrackerLabel = %q, want %q", cfg.TrackerLabel, "codehephaestus")
+	if cfg.TrackerPlanningLabel != "codehephaestus" {
+		t.Errorf("TrackerPlanningLabel = %q, want %q", cfg.TrackerPlanningLabel, "codehephaestus")
 	}
 	if cfg.PlanningModel != "sonnet" {
 		t.Errorf("PlanningModel = %q, want %q", cfg.PlanningModel, "sonnet")
