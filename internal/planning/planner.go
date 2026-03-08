@@ -86,10 +86,13 @@ func (p *Planner) StartPlanning(ctx context.Context, issue tracker.Issue) error 
 	questions := parseQuestions(result.Output)
 	questionsJSON, _ := json.Marshal(questions)
 
+	// Ensure heading reflects question state — AI may not always comply with template instructions
+	output := ensureCorrectHeading(result.Output, len(questions) == 0, p.cfg.BotDisplayName)
+
 	// Post the comment and capture its ID
 	var botCommentID string
 	if !p.cfg.DryRun {
-		commentID, err := p.tracker.AddCommentReturningID(ctx, issue.Key, result.Output)
+		commentID, err := p.tracker.AddCommentReturningID(ctx, issue.Key, output)
 		if err != nil {
 			return fmt.Errorf("posting planning comment: %w", err)
 		}
@@ -154,19 +157,22 @@ func (p *Planner) ContinuePlanning(ctx context.Context, issue tracker.Issue, ps 
 	remainingQuestions := parseQuestions(result.Output)
 	questionsJSON, _ := json.Marshal(remainingQuestions)
 
+	// Ensure heading reflects question state
+	output := ensureCorrectHeading(result.Output, len(remainingQuestions) == 0, p.cfg.BotDisplayName)
+
 	// Update comment in-place; fallback to new comment if update fails
 	if !p.cfg.DryRun {
 		if ps.BotCommentID != "" {
-			if err := p.tracker.UpdateComment(ctx, issue.Key, ps.BotCommentID, result.Output); err != nil {
+			if err := p.tracker.UpdateComment(ctx, issue.Key, ps.BotCommentID, output); err != nil {
 				log.Warn().Err(err).Str("issue", issue.Key).Msg("failed to update comment, posting new one")
-				newID, postErr := p.tracker.AddCommentReturningID(ctx, issue.Key, result.Output)
+				newID, postErr := p.tracker.AddCommentReturningID(ctx, issue.Key, output)
 				if postErr != nil {
 					return fmt.Errorf("posting fallback comment: %w", postErr)
 				}
 				ps.BotCommentID = newID
 			}
 		} else {
-			newID, err := p.tracker.AddCommentReturningID(ctx, issue.Key, result.Output)
+			newID, err := p.tracker.AddCommentReturningID(ctx, issue.Key, output)
 			if err != nil {
 				return fmt.Errorf("posting planning comment: %w", err)
 			}
@@ -381,6 +387,18 @@ func (p *Planner) collectImages(ctx context.Context, issue tracker.Issue) ([]str
 	}
 
 	return imagePaths, nil
+}
+
+// ensureCorrectHeading fixes the comment heading to match the question state.
+// When noQuestions is true, ensures "Planning Complete"; otherwise ensures "Planning".
+func ensureCorrectHeading(output string, noQuestions bool, botName string) string {
+	planning := fmt.Sprintf("## %s — Planning\n", botName)
+	planningComplete := fmt.Sprintf("## %s — Planning Complete\n", botName)
+
+	if noQuestions {
+		return strings.Replace(output, planning, planningComplete, 1)
+	}
+	return strings.Replace(output, planningComplete, planning, 1)
 }
 
 func containsReadyKeyword(text string) bool {
