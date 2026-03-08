@@ -3,7 +3,6 @@ package loop
 import (
 	"context"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -51,6 +50,9 @@ func (pd *PriorityDispatcher) FindWork(ctx context.Context) (*statemachine.WorkI
 	for _, i := range todoIssues {
 		todoMap[i.Key] = i
 	}
+
+	// Record done tickets assigned to the bot that have no DB record yet.
+	pd.recordDoneTickets(ctx)
 
 	// Priority 1: Active planning with new human comments
 	if item, err := pd.checkPlanningConversations(ctx, activePlans, todoMap); err != nil {
@@ -211,35 +213,6 @@ func (pd *PriorityDispatcher) checkPlanningReady(ctx context.Context, activePlan
 			continue
 		}
 
-		// Check for keyword-based ready signal in human comments since last system comment
-		if ps.LastSystemCommentAt != nil {
-			allComments, err := pd.tracker.GetComments(ctx, issue.Key)
-			if err != nil {
-				log.Warn().Err(err).Str("issue", issue.Key).Msg("failed to fetch comments for ready check")
-			}
-			if err == nil {
-				for _, c := range allComments {
-					if c.Author == pd.botUserID || !c.Created.After(*ps.LastSystemCommentAt) {
-						continue
-					}
-					lower := strings.ToLower(c.Body)
-					if strings.Contains(lower, "ready") || strings.Contains(lower, "lgtm") || strings.Contains(lower, "approved") {
-						if !issue.IsAssignedTo(pd.botUserID) {
-							log.Debug().Str("issue", issue.Key).Msg("ready signal detected but issue not assigned to bot, staying in planning")
-							continue
-						}
-						return &statemachine.WorkItem{
-							State: statemachine.StatePlanningReady,
-							Issue: issue,
-							Context: map[string]interface{}{
-								"planning_state": ps,
-							},
-						}, nil
-					}
-				}
-			}
-		}
-
 		// Check thumbs_up reaction on the bot's comment directly by ID
 		if ps.BotCommentID != "" {
 			reactions, err := pd.tracker.GetCommentReactions(ctx, issue.Key, ps.BotCommentID)
@@ -288,4 +261,44 @@ func (pd *PriorityDispatcher) checkNewIssues(activePlans []*db.PlanningState, to
 	}
 
 	return nil
+}
+
+// recordDoneTickets finds issues in "Done" status assigned to the bot that
+// have no existing DB record, and inserts a "complete" planning state so
+// they are never picked up as new work.
+func (pd *PriorityDispatcher) recordDoneTickets(ctx context.Context) {
+	doneIssues, err := pd.tracker.FetchIssuesByStatus(ctx, pd.cfg.StatusDone())
+	if err != nil {
+		log.Warn().Err(err).Msg("error fetching done issues")
+		return
+	}
+
+	now := time.Now().UTC()
+	for _, issue := range doneIssues {
+		if !issue.IsAssignedTo(pd.botUserID) {
+			continue
+		}
+		existing, err := pd.stateDB.GetPlanningState(issue.Key)
+		if err != nil {
+			log.Warn().Err(err).Str("issue", issue.Key).Msg("error checking planning state for done ticket")
+			continue
+		}
+		if existing != nil {
+			continue
+		}
+
+		ps := &db.PlanningState{
+			IssueKey:         issue.Key,
+			ConversationJSON: "[]",
+			ParticipantsJSON: "[]",
+			Status:           planning.StatusComplete,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}
+		if err := pd.stateDB.InsertPlanningState(ps); err != nil {
+			log.Warn().Err(err).Str("issue", issue.Key).Msg("failed to record done ticket")
+			continue
+		}
+		log.Info().Str("issue", issue.Key).Msg("recorded pre-existing done ticket as complete")
+	}
 }

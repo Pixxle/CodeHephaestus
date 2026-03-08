@@ -199,34 +199,8 @@ func (p *Planner) ContinuePlanning(ctx context.Context, issue tracker.Issue, ps 
 	return nil
 }
 
-// CheckReadySignal detects if a human has signalled readiness via comment or reaction.
+// CheckReadySignal detects if a human has signalled readiness via thumbs-up reaction on the bot's comment.
 func (p *Planner) CheckReadySignal(ctx context.Context, issue tracker.Issue, ps *db.PlanningState) (bool, error) {
-	comments, err := p.tracker.GetComments(ctx, issue.Key)
-	if err != nil {
-		return false, err
-	}
-
-	// Check for ready keyword in human comments since last system comment
-	for _, c := range comments {
-		if c.Author == p.botUserID {
-			continue
-		}
-		if ps.LastSystemCommentAt != nil && !c.Created.After(*ps.LastSystemCommentAt) {
-			continue
-		}
-
-		isReady, err := p.detectReadyIntent(ctx, c.Body)
-		if err != nil {
-			log.Warn().Err(err).Msg("failed AI ready detection, falling back to keyword match")
-			isReady = containsReadyKeyword(c.Body)
-		}
-
-		if isReady {
-			return true, nil
-		}
-	}
-
-	// Check for thumbs_up reaction on the bot's comment directly by ID
 	if ps.BotCommentID != "" {
 		reactions, err := p.tracker.GetCommentReactions(ctx, issue.Key, ps.BotCommentID)
 		if err == nil {
@@ -319,27 +293,6 @@ func parseQuestions(output string) []string {
 	return questions
 }
 
-func (p *Planner) detectReadyIntent(ctx context.Context, commentBody string) (bool, error) {
-	prompt := fmt.Sprintf(`Analyze this comment and determine if the human is signaling that they are ready for development to begin. They might say things like "ready", "lgtm", "approved", "go ahead", "looks good", "start building", etc.
-
-Comment: %q
-
-Respond with ONLY a JSON object: {"ready": true} or {"ready": false}`, commentBody)
-
-	output, err := worker.RunClaudeQuick(ctx, prompt, p.cfg.PlanningModel)
-	if err != nil {
-		return false, err
-	}
-
-	var result struct {
-		Ready bool `json:"ready"`
-	}
-	if err := json.Unmarshal([]byte(output), &result); err != nil {
-		return false, fmt.Errorf("parsing ready detection response: %w", err)
-	}
-	return result.Ready, nil
-}
-
 func (p *Planner) collectImages(ctx context.Context, issue tracker.Issue) ([]string, error) {
 	var imagePaths []string
 
@@ -417,17 +370,6 @@ func ensureCorrectHeading(output string, noQuestions bool, botName string) strin
 		return strings.Replace(output, planning, planningComplete, 1)
 	}
 	return strings.Replace(output, planningComplete, planning, 1)
-}
-
-func containsReadyKeyword(text string) bool {
-	lower := strings.ToLower(text)
-	keywords := []string{"ready", "lgtm", "approved", "go ahead", "looks good", "start building"}
-	for _, kw := range keywords {
-		if strings.Contains(lower, kw) {
-			return true
-		}
-	}
-	return false
 }
 
 func isImageMime(mime string) bool {

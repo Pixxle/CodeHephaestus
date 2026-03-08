@@ -65,31 +65,6 @@ Do something.
 	}
 }
 
-func TestContainsReadyKeyword(t *testing.T) {
-	tests := []struct {
-		text string
-		want bool
-	}{
-		{"ready to go", true},
-		{"LGTM", true},
-		{"approved", true},
-		{"Go ahead and build", true},
-		{"Looks good to me", true},
-		{"Start building", true},
-		{"I have a question", false},
-		{"not sure about this", false},
-		{"", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.text, func(t *testing.T) {
-			if got := containsReadyKeyword(tt.text); got != tt.want {
-				t.Errorf("containsReadyKeyword(%q) = %v, want %v", tt.text, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestDescriptionChanged(t *testing.T) {
 	tests := []struct {
 		name     string
