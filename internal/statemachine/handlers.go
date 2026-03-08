@@ -247,6 +247,17 @@ func (h *Handlers) transitionToImplementation(ctx context.Context, issue tracker
 		return nil
 	}
 
+	// Run /simplify to clean up the implementation before creating the PR
+	if h.m.cfg.SimplifyEnabled {
+		log.Info().Str("issue", issue.Key).Msg("running simplify pass")
+		simplifyResult, simplifyErr := worker.RunClaude(ctx, "/simplify", wtDir, h.m.cfg.TeammateModel)
+		if simplifyErr != nil {
+			log.Warn().Err(simplifyErr).Str("issue", issue.Key).Msg("simplify pass failed, continuing with PR")
+		} else if simplifyResult.ExitCode != 0 {
+			log.Warn().Int("exit_code", simplifyResult.ExitCode).Str("issue", issue.Key).Msg("simplify exited non-zero, continuing with PR")
+		}
+	}
+
 	if err := h.m.github.PushBranch(ctx, branch, wtDir); err != nil {
 		return fmt.Errorf("pushing branch: %w", err)
 	}

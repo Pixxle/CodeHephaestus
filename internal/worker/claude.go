@@ -38,6 +38,7 @@ func RunClaude(ctx context.Context, prompt, workingDir, model string) (*ClaudeRe
 		Str("model", model).
 		Str("cwd", workingDir).
 		Int("prompt_len", len(prompt)).
+		Str("prompt", prompt).
 		Msg("launching claude session")
 
 	err := cmd.Run()
@@ -83,7 +84,9 @@ func RunClaudeAgentTeam(ctx context.Context, prompt, workingDir, model string, t
 	log.Debug().
 		Str("model", model).
 		Str("cwd", workingDir).
+		Int("prompt_len", len(prompt)).
 		Dur("timeout", timeout).
+		Str("prompt", prompt).
 		Msg("launching agent team session")
 
 	err := cmd.Run()
@@ -133,6 +136,7 @@ func RunClaudeText(ctx context.Context, prompt, workingDir, model string) (*Clau
 		Str("model", model).
 		Str("cwd", workingDir).
 		Int("prompt_len", len(prompt)).
+		Str("prompt", prompt).
 		Msg("launching claude text session")
 
 	err := cmd.Run()

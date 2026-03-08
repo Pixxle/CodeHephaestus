@@ -71,6 +71,9 @@ type Config struct {
 	// Logging
 	LogLevel string
 
+	// Post-processing
+	SimplifyEnabled bool
+
 	// CLI overrides
 	DryRun  bool
 	Once    bool
@@ -127,7 +130,8 @@ func Load(envPath string) (*Config, error) {
 		WorktreePath:   os.Getenv("WORKTREE_PATH"),
 		StateDBPath:    os.Getenv("STATE_DB_PATH"),
 
-		LogLevel: envOrDefault("LOG_LEVEL", "info"),
+		LogLevel:        envOrDefault("LOG_LEVEL", "info"),
+		SimplifyEnabled: os.Getenv("SIMPLIFY_ENABLED") != "false",
 	}
 
 	if cfg.WorktreePath == "" {
