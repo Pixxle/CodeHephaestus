@@ -44,7 +44,7 @@ func TestParsePRNumber(t *testing.T) {
 	}
 }
 
-func TestParseReactedComments(t *testing.T) {
+func TestParseComments(t *testing.T) {
 	tests := []struct {
 		name        string
 		input       string
@@ -137,7 +137,7 @@ func TestParseReactedComments(t *testing.T) {
 			},
 		},
 		{
-			name: "comment with no reactions filtered out",
+			name: "comment with no reactions included with empty reaction",
 			input: `[{
 				"id": 3,
 				"node_id": "PRRC_ghi",
@@ -147,7 +147,12 @@ func TestParseReactedComments(t *testing.T) {
 				"reactions": {"+1": 0, "eyes": 0}
 			}]`,
 			commentType: "review_comment",
-			wantLen:     0,
+			wantLen:     1,
+			check: func(t *testing.T, comments []PRComment) {
+				if comments[0].Reaction != "" {
+					t.Errorf("Reaction = %q, want empty string", comments[0].Reaction)
+				}
+			},
 		},
 		{
 			name: "mixed reactions",
@@ -178,15 +183,15 @@ func TestParseReactedComments(t *testing.T) {
 				}
 			]`,
 			commentType: "review_comment",
-			wantLen:     2,
+			wantLen:     3,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := parseReactedComments(tt.input, tt.commentType)
+			got := parseComments(tt.input, tt.commentType)
 			if len(got) != tt.wantLen {
-				t.Fatalf("parseReactedComments() returned %d comments, want %d", len(got), tt.wantLen)
+				t.Fatalf("parseComments() returned %d comments, want %d", len(got), tt.wantLen)
 			}
 			if tt.check != nil {
 				tt.check(t, got)

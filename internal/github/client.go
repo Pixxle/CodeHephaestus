@@ -73,8 +73,8 @@ func (c *Client) GetPRComments(ctx context.Context, prNumber int, since *string)
 	issueOut, _ := c.gh(ctx, "api", fmt.Sprintf("repos/{owner}/{repo}/issues/%s/comments", prStr))
 
 	var comments []PRComment
-	comments = append(comments, parseReactedComments(reviewOut, "review_comment")...)
-	comments = append(comments, parseReactedComments(issueOut, "issue_comment")...)
+	comments = append(comments, parseComments(reviewOut, "review_comment")...)
+	comments = append(comments, parseComments(issueOut, "issue_comment")...)
 
 	if since != nil {
 		var filtered []PRComment
@@ -271,7 +271,7 @@ func parsePRNumber(jsonOutput string) int {
 	return 0
 }
 
-func parseReactedComments(jsonData string, commentType string) []PRComment {
+func parseComments(jsonData string, commentType string) []PRComment {
 	if jsonData == "" {
 		return nil
 	}
@@ -302,17 +302,15 @@ func parseReactedComments(jsonData string, commentType string) []PRComment {
 		} else if r.Reactions.Eyes > 0 {
 			reaction = "eyes"
 		}
-		if reaction != "" {
-			comments = append(comments, PRComment{
-				ID:        r.ID,
-				NodeID:    r.NodeID,
-				Author:    r.User.Login,
-				Body:      r.Body,
-				CreatedAt: r.CreatedAt,
-				Type:      commentType,
-				Reaction:  reaction,
-			})
-		}
+		comments = append(comments, PRComment{
+			ID:        r.ID,
+			NodeID:    r.NodeID,
+			Author:    r.User.Login,
+			Body:      r.Body,
+			CreatedAt: r.CreatedAt,
+			Type:      commentType,
+			Reaction:  reaction,
+		})
 	}
 	return comments
 }

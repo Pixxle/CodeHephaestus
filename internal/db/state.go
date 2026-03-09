@@ -239,7 +239,7 @@ func (s *StateDB) IsCommentProcessed(commentID string) (bool, error) {
 
 func (s *StateDB) InsertPRFeedback(rec *PRFeedbackRecord) error {
 	now := timeStr(time.Now().UTC())
-	_, err := s.db.Exec(`INSERT INTO pr_feedback_state
+	_, err := s.db.Exec(`INSERT OR IGNORE INTO pr_feedback_state
 		(issue_key, pr_number, comment_id, comment_type, action_taken, commit_sha, processed_at, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		rec.IssueKey, rec.PRNumber, rec.CommentID, rec.CommentType,

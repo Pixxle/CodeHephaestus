@@ -74,6 +74,7 @@ func (h *Handlers) HandleReviewFeedback(ctx context.Context, item *WorkItem) err
 	var codeChangeComments []ghclient.PRComment
 	var questionComments []ghclient.PRComment
 
+	var skippedComments []ghclient.PRComment
 	for _, c := range comments {
 		if c.Reaction == "thumbs_up" {
 			classification := classifyComment(ctx, c.Body, h.m.cfg.PlanningModel)
@@ -84,6 +85,13 @@ func (h *Handlers) HandleReviewFeedback(ctx context.Context, item *WorkItem) err
 			}
 		} else if c.Reaction == "eyes" {
 			questionComments = append(questionComments, c)
+		} else {
+			// Unreacted comment: classify as question or skip
+			if classifyIsQuestion(ctx, c.Body, h.m.cfg.PlanningModel) {
+				questionComments = append(questionComments, c)
+			} else {
+				skippedComments = append(skippedComments, c)
+			}
 		}
 	}
 
@@ -102,6 +110,10 @@ func (h *Handlers) HandleReviewFeedback(ctx context.Context, item *WorkItem) err
 			log.Error().Err(err).Str("issue", item.Issue.Key).Msg("failed to address code changes")
 			return err
 		}
+	}
+
+	for _, c := range skippedComments {
+		h.recordFeedback(item.Issue.Key, prNumber, c, "skipped_not_question", nil)
 	}
 
 	return nil
@@ -419,4 +431,25 @@ Respond with ONLY a JSON object: {"type": "code_change"} or {"type": "question"}
 		return "code_change"
 	}
 	return result.Type
+}
+
+func classifyIsQuestion(ctx context.Context, body, model string) bool {
+	prompt := fmt.Sprintf(`Is this PR comment asking a question that needs answering? Direct questions, requests for explanation = yes. Praise, acknowledgments, automated summaries, informational statements = no.
+
+Comment: %q
+
+Respond with ONLY a JSON object: {"is_question": true} or {"is_question": false}`, body)
+
+	output, err := worker.RunClaudeQuick(ctx, prompt, model)
+	if err != nil {
+		return false
+	}
+
+	var result struct {
+		IsQuestion bool `json:"is_question"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &result); err != nil {
+		return false
+	}
+	return result.IsQuestion
 }

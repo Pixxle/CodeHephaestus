@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -15,6 +16,8 @@ import (
 	"github.com/pixxle/codehephaestus/internal/tracker"
 )
 
+const githubBotSuffix = "[bot]"
+
 type PriorityDispatcher struct {
 	cfg                *config.Config
 	tracker            tracker.TaskTracker
@@ -22,18 +25,20 @@ type PriorityDispatcher struct {
 	stateDB            *db.StateDB
 	loopPrev           *LoopPrevention
 	botUserID          string
+	ghUsername         string
 	lastDoneCheck      time.Time
 	lastReconcileCheck time.Time
 }
 
-func NewPriorityDispatcher(cfg *config.Config, t tracker.TaskTracker, gh *ghclient.Client, stateDB *db.StateDB, lp *LoopPrevention, botUserID string) *PriorityDispatcher {
+func NewPriorityDispatcher(cfg *config.Config, t tracker.TaskTracker, gh *ghclient.Client, stateDB *db.StateDB, lp *LoopPrevention, botUserID string, ghUsername string) *PriorityDispatcher {
 	return &PriorityDispatcher{
-		cfg:       cfg,
-		tracker:   t,
-		github:    gh,
-		stateDB:   stateDB,
-		loopPrev:  lp,
-		botUserID: botUserID,
+		cfg:        cfg,
+		tracker:    t,
+		github:     gh,
+		stateDB:    stateDB,
+		loopPrev:   lp,
+		botUserID:  botUserID,
+		ghUsername: ghUsername,
 	}
 }
 
@@ -163,9 +168,16 @@ func (pd *PriorityDispatcher) checkReviewFeedback(ctx context.Context) (*statema
 
 		var unprocessed []ghclient.PRComment
 		for _, c := range comments {
-			if !pd.loopPrev.IsCommentProcessed(strconv.FormatInt(c.ID, 10)) {
-				unprocessed = append(unprocessed, c)
+			commentIDStr := strconv.FormatInt(c.ID, 10)
+			if pd.loopPrev.IsCommentProcessed(commentIDStr) {
+				continue
 			}
+			// Filter out bot's own comments and GitHub app bots
+			if (pd.ghUsername != "" && c.Author == pd.ghUsername) || strings.HasSuffix(c.Author, githubBotSuffix) {
+				pd.recordSkippedBot(issue.Key, prNumber, c)
+				continue
+			}
+			unprocessed = append(unprocessed, c)
 		}
 		if len(unprocessed) == 0 {
 			continue
@@ -275,6 +287,20 @@ func (pd *PriorityDispatcher) checkNewIssues(activePlans []*db.PlanningState, to
 	}
 
 	return nil
+}
+
+func (pd *PriorityDispatcher) recordSkippedBot(issueKey string, prNumber int, c ghclient.PRComment) {
+	rec := &db.PRFeedbackRecord{
+		IssueKey:    issueKey,
+		PRNumber:    prNumber,
+		CommentID:   strconv.FormatInt(c.ID, 10),
+		CommentType: c.Type,
+		ActionTaken: "skipped_bot",
+		CreatedAt:   time.Now().UTC(),
+	}
+	if err := pd.stateDB.InsertPRFeedback(rec); err != nil {
+		log.Warn().Err(err).Msg("failed to record skipped bot comment")
+	}
 }
 
 // recordDoneTickets finds issues in "Done" status assigned to the bot that

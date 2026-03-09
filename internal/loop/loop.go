@@ -29,6 +29,7 @@ func NewRunner(
 	stateDB *db.StateDB,
 	figmaClient *figma.Client,
 	botUserID string,
+	ghUsername string,
 ) *Runner {
 	lp := NewLoopPrevention(stateDB)
 	m := statemachine.NewMachine(cfg, t, gh, stateDB, figmaClient, botUserID)
@@ -36,7 +37,7 @@ func NewRunner(
 		cfg:        cfg,
 		machine:    m,
 		loopPrev:   lp,
-		dispatcher: NewPriorityDispatcher(cfg, t, gh, stateDB, lp, botUserID),
+		dispatcher: NewPriorityDispatcher(cfg, t, gh, stateDB, lp, botUserID, ghUsername),
 	}
 }
 
