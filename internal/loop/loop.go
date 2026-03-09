@@ -97,5 +97,11 @@ func (r *Runner) runIteration(ctx context.Context) error {
 	}
 
 	r.loopPrev.RecordAttempt(item.Issue.Key)
-	return r.machine.Handle(ctx, item)
+	if err := r.machine.Handle(ctx, item); err != nil {
+		return err
+	}
+	if item.State == statemachine.StateInReview {
+		r.loopPrev.MarkFeedbackProcessed(item.Issue.Key)
+	}
+	return nil
 }

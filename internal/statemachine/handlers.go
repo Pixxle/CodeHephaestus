@@ -87,11 +87,14 @@ func (h *Handlers) HandleReviewFeedback(ctx context.Context, item *WorkItem) err
 		}
 	}
 
-	for _, q := range questionComments {
-		if err := h.answerQuestion(ctx, item.Issue, prNumber, q); err != nil {
-			log.Warn().Err(err).Int64("comment", q.ID).Msg("failed to answer question")
+	if len(questionComments) > 0 {
+		diff, _ := h.m.github.GetPRDiff(ctx, prNumber)
+		for _, q := range questionComments {
+			if err := h.answerQuestion(ctx, item.Issue, prNumber, diff, q); err != nil {
+				log.Warn().Err(err).Int64("comment", q.ID).Msg("failed to answer question")
+			}
+			h.recordFeedback(item.Issue.Key, prNumber, q, "question_answered", nil)
 		}
-		h.recordFeedback(item.Issue.Key, prNumber, q, "question_answered", nil)
 	}
 
 	if len(codeChangeComments) > 0 {
@@ -307,21 +310,29 @@ func (h *Handlers) transitionToImplementation(ctx context.Context, issue tracker
 	return nil
 }
 
-func (h *Handlers) answerQuestion(ctx context.Context, issue tracker.Issue, prNumber int, comment ghclient.PRComment) error {
+func (h *Handlers) answerQuestion(ctx context.Context, issue tracker.Issue, prNumber int, diff string, comment ghclient.PRComment) error {
 	log.Info().Str("issue", issue.Key).Int64("comment", comment.ID).Msg("answering question")
 
-	diff, _ := h.m.github.GetPRDiff(ctx, prNumber)
 	prompt, err := team.BuildAnswerQuestionPrompt(comment.Body, diff)
 	if err != nil {
 		return err
 	}
 
-	result, err := worker.RunClaudeText(ctx, prompt, h.m.cfg.TargetRepoPath, h.m.cfg.TeammateModel)
+	result, err := worker.RunClaude(ctx, prompt, h.m.cfg.TargetRepoPath, h.m.cfg.TeammateModel)
 	if err != nil {
 		return err
 	}
 
 	if !h.m.cfg.DryRun {
+		if comment.Type == "review_comment" {
+			if err := h.m.github.ReplyToReviewComment(ctx, prNumber, comment.ID, result.Output); err != nil {
+				return err
+			}
+			if err := h.m.github.ResolveReviewThread(ctx, comment.NodeID); err != nil {
+				log.Warn().Err(err).Int64("comment", comment.ID).Msg("failed to resolve review thread (non-fatal)")
+			}
+			return nil
+		}
 		return h.m.github.PostPRComment(ctx, prNumber, result.Output)
 	}
 	return nil
@@ -379,7 +390,7 @@ func (h *Handlers) recordFeedback(issueKey string, prNumber int, comment ghclien
 		IssueKey:    issueKey,
 		PRNumber:    prNumber,
 		CommentID:   strconv.FormatInt(comment.ID, 10),
-		CommentType: "review_comment",
+		CommentType: comment.Type,
 		ActionTaken: action,
 		CommitSHA:   sha,
 		CreatedAt:   time.Now().UTC(),

@@ -11,9 +11,11 @@ import (
 
 type PRComment struct {
 	ID        int64  `json:"id"`
+	NodeID    string `json:"nodeId"`
 	Author    string `json:"author"`
 	Body      string `json:"body"`
 	CreatedAt string `json:"createdAt"`
+	Type      string `json:"type"`     // "review_comment" or "issue_comment"
 	Reaction  string `json:"reaction"` // "thumbs_up" or "eyes"
 }
 
@@ -240,6 +242,25 @@ func (c *Client) gh(ctx context.Context, args ...string) (string, error) {
 	return string(out), nil
 }
 
+func (c *Client) ghWithStdin(ctx context.Context, input string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "gh", args...)
+	cmd.Dir = c.repoPath
+	cmd.Stdin = strings.NewReader(input)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return out, fmt.Errorf("gh %s: %w: %s", strings.Join(args, " "), err, string(out))
+	}
+	return out, nil
+}
+
+func (c *Client) ghGraphQL(ctx context.Context, query string) ([]byte, error) {
+	payload, err := json.Marshal(map[string]string{"query": query})
+	if err != nil {
+		return nil, fmt.Errorf("marshalling graphql query: %w", err)
+	}
+	return c.ghWithStdin(ctx, string(payload), "api", "graphql", "--input", "-")
+}
+
 func parsePRNumber(jsonOutput string) int {
 	var prs []struct {
 		Number int `json:"number"`
@@ -257,6 +278,7 @@ func parseReactedComments(jsonData string, commentType string) []PRComment {
 
 	var raw []struct {
 		ID        int64  `json:"id"`
+		NodeID    string `json:"node_id"`
 		Body      string `json:"body"`
 		CreatedAt string `json:"created_at"`
 		User      struct {
@@ -274,25 +296,71 @@ func parseReactedComments(jsonData string, commentType string) []PRComment {
 
 	var comments []PRComment
 	for _, r := range raw {
+		var reaction string
 		if r.Reactions.ThumbsUp > 0 {
-			comments = append(comments, PRComment{
-				ID:        r.ID,
-				Author:    r.User.Login,
-				Body:      r.Body,
-				CreatedAt: r.CreatedAt,
-				Reaction:  "thumbs_up",
-			})
+			reaction = "thumbs_up"
 		} else if r.Reactions.Eyes > 0 {
+			reaction = "eyes"
+		}
+		if reaction != "" {
 			comments = append(comments, PRComment{
 				ID:        r.ID,
+				NodeID:    r.NodeID,
 				Author:    r.User.Login,
 				Body:      r.Body,
 				CreatedAt: r.CreatedAt,
-				Reaction:  "eyes",
+				Type:      commentType,
+				Reaction:  reaction,
 			})
 		}
 	}
 	return comments
+}
+
+// ReplyToReviewComment posts an inline reply to a pull request review comment.
+func (c *Client) ReplyToReviewComment(ctx context.Context, prNumber int, commentID int64, body string) error {
+	payload, err := json.Marshal(map[string]interface{}{
+		"body":        body,
+		"in_reply_to": commentID,
+	})
+	if err != nil {
+		return fmt.Errorf("marshalling reply payload: %w", err)
+	}
+
+	_, err = c.ghWithStdin(ctx, string(payload), "api",
+		fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/comments", prNumber),
+		"--method", "POST", "--input", "-")
+	return err
+}
+
+// ResolveReviewThread resolves the review thread containing the given comment node ID.
+func (c *Client) ResolveReviewThread(ctx context.Context, commentNodeID string) error {
+	threadQuery := fmt.Sprintf(`query { node(id: %q) { ... on PullRequestReviewComment { pullRequestReviewThread { id } } } }`, commentNodeID)
+	out, err := c.ghGraphQL(ctx, threadQuery)
+	if err != nil {
+		return fmt.Errorf("querying review thread: %w", err)
+	}
+
+	var threadResult struct {
+		Data struct {
+			Node struct {
+				PullRequestReviewThread struct {
+					ID string `json:"id"`
+				} `json:"pullRequestReviewThread"`
+			} `json:"node"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(out, &threadResult); err != nil {
+		return fmt.Errorf("parsing thread query response: %w", err)
+	}
+	threadID := threadResult.Data.Node.PullRequestReviewThread.ID
+	if threadID == "" {
+		return fmt.Errorf("could not find review thread for comment %s", commentNodeID)
+	}
+
+	resolveMutation := fmt.Sprintf(`mutation { resolveReviewThread(input: {threadId: %q}) { thread { isResolved } } }`, threadID)
+	_, err = c.ghGraphQL(ctx, resolveMutation)
+	return err
 }
 
 // GetPRDiff returns the diff for a given PR number.
