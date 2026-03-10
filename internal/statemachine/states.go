@@ -9,11 +9,15 @@ const (
 	// StateTodo — fresh To Do issue, no planning state row. Action: start planning.
 	StateTodo State = "todo"
 
-	// StatePlanning — active planning conversation with new human comments.
+	// StatePlanning — active planning conversation (product or technical phase)
+	// with new human comments. The planning_phase field in the DB determines
+	// which phase is active: "product" for product requirements refinement,
+	// "technical" for technical refinement. Phase transitions happen automatically
+	// when all questions in a phase are resolved.
 	// Action: continue the planning conversation (or detect ready signal).
 	StatePlanning State = "planning"
 
-	// StatePlanningReady — human signalled readiness.
+	// StatePlanningReady — human signalled readiness or auto-launch triggered.
 	// Action: finalize spec, create worktree, launch agent team, open draft PR.
 	StatePlanningReady State = "planning_ready"
 
@@ -40,8 +44,9 @@ type Transition struct {
 // Note: These use tracker-level concepts (not dispatch states like StateCIFailure).
 var ValidTransitions = []Transition{
 	{StateTodo, StatePlanning, "issue detected with planning label or assignment"},
-	{StatePlanning, StatePlanning, "new question posted or human replies"},
-	{StatePlanning, StatePlanningReady, "human signals ready for development"},
+	{StatePlanning, StatePlanning, "description updated during product or technical refinement"},
+	{StatePlanning, StatePlanning, "product refinement complete, auto-transition to technical refinement"},
+	{StatePlanning, StatePlanningReady, "human signals ready or auto-launch after both phases complete"},
 	{StatePlanningReady, "in_progress", "description updated, implementation begins"},
 	{"in_progress", "in_progress", "CI failure fixed or devil's advocate rework"},
 	{"in_progress", StateInReview, "CI passes on draft PR"},

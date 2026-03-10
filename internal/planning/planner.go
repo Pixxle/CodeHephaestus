@@ -31,6 +31,12 @@ const (
 	StatusTimedOut = "timed_out"
 )
 
+// Planning phase values.
+const (
+	PhaseProduct   = "product"
+	PhaseTechnical = "technical"
+)
+
 type Planner struct {
 	cfg       *config.Config
 	tracker   tracker.TaskTracker
@@ -50,9 +56,9 @@ func NewPlanner(cfg *config.Config, t tracker.TaskTracker, stateDB *db.StateDB, 
 }
 
 // StartPlanning begins the planning conversation for a new issue.
-// Posts a single analysis comment and stores its ID for in-place updates.
+// Starts with the product requirements refinement phase.
 func (p *Planner) StartPlanning(ctx context.Context, issue tracker.Issue) error {
-	log.Info().Str("issue", issue.Key).Msg("starting planning conversation")
+	log.Info().Str("issue", issue.Key).Msg("starting planning conversation (product requirements phase)")
 
 	// Save images from attachments and Figma to disk
 	images, err := p.collectImages(ctx, issue)
@@ -65,7 +71,7 @@ func (p *Planner) StartPlanning(ctx context.Context, issue tracker.Issue) error 
 	figmaURLsJSON, _ := json.Marshal(figmaURLs)
 	imageRefsJSON, _ := json.Marshal(images)
 
-	// Generate initial planning comment via claude
+	// Generate initial product requirements comment via claude
 	prompt, err := worker.RenderPrompt("planning_initial.md.tmpl", map[string]interface{}{
 		"IssueKey":         issue.Key,
 		"IssueTitle":       issue.Title,
@@ -90,8 +96,8 @@ func (p *Planner) StartPlanning(ctx context.Context, issue tracker.Issue) error 
 	questions := parseQuestions(cleanOutput)
 	questionsJSON, _ := json.Marshal(questions)
 
-	// Ensure heading reflects question state — AI may not always comply with template instructions
-	output := ensureCorrectHeading(cleanOutput, len(questions) == 0, p.cfg.BotDisplayName)
+	// Ensure heading reflects question state
+	output := ensureCorrectProductHeading(cleanOutput, len(questions) == 0, p.cfg.BotDisplayName)
 
 	// Post the comment and capture its ID
 	var botCommentID string
@@ -118,29 +124,41 @@ func (p *Planner) StartPlanning(ctx context.Context, issue tracker.Issue) error 
 		BotCommentID:        botCommentID,
 		LastSeenDescription: issue.Description,
 		QuestionsJSON:       string(questionsJSON),
+		PlanningPhase:       PhaseProduct,
 	}
 	if err := p.stateDB.InsertPlanningState(ps); err != nil {
 		return fmt.Errorf("inserting planning state: %w", err)
 	}
 
-	log.Info().Str("issue", issue.Key).Int("questions", len(questions)).Msg("planning conversation started")
+	log.Info().Str("issue", issue.Key).Int("questions", len(questions)).Str("phase", PhaseProduct).Msg("planning conversation started")
 	return nil
 }
 
 // ContinuePlanning re-analyzes when the issue description has changed.
-// Updates the bot's comment in-place instead of posting new comments.
+// Uses phase-appropriate prompts and handles automatic phase transitions.
 func (p *Planner) ContinuePlanning(ctx context.Context, issue tracker.Issue, ps *db.PlanningState) error {
 	// Only act if the description changed
 	if !DescriptionChanged(issue.Description, ps.LastSeenDescription) {
 		return nil
 	}
 
+	phase := ps.PlanningPhase
+	if phase == "" {
+		phase = PhaseProduct
+	}
+
 	// Load open questions
 	var openQuestions []string
 	_ = json.Unmarshal([]byte(ps.QuestionsJSON), &openQuestions)
 
+	// Select the appropriate follow-up template based on phase
+	templateName := "planning_followup.md.tmpl"
+	if phase == PhaseTechnical {
+		templateName = "planning_technical_followup.md.tmpl"
+	}
+
 	// Generate follow-up via claude
-	prompt, err := worker.RenderPrompt("planning_followup.md.tmpl", map[string]interface{}{
+	prompt, err := worker.RenderPrompt(templateName, map[string]interface{}{
 		"IssueKey":            issue.Key,
 		"IssueTitle":          issue.Title,
 		"PreviousDescription": ps.LastSeenDescription,
@@ -165,8 +183,13 @@ func (p *Planner) ContinuePlanning(ctx context.Context, issue tracker.Issue, ps 
 	remainingQuestions := parseQuestions(cleanOutput)
 	questionsJSON, _ := json.Marshal(remainingQuestions)
 
-	// Ensure heading reflects question state
-	output := ensureCorrectHeading(cleanOutput, len(remainingQuestions) == 0, p.cfg.BotDisplayName)
+	// Ensure heading reflects question state based on phase
+	var output string
+	if phase == PhaseTechnical {
+		output = ensureCorrectTechnicalHeading(cleanOutput, len(remainingQuestions) == 0, p.cfg.BotDisplayName)
+	} else {
+		output = ensureCorrectProductHeading(cleanOutput, len(remainingQuestions) == 0, p.cfg.BotDisplayName)
+	}
 
 	// Update comment in-place; fallback to new comment if update fails
 	if !p.cfg.DryRun {
@@ -193,17 +216,125 @@ func (p *Planner) ContinuePlanning(ctx context.Context, issue tracker.Issue, ps 
 	ps.LastSeenDescription = issue.Description
 	ps.QuestionsJSON = string(questionsJSON)
 	ps.LastSystemCommentAt = &now
+
+	// Check for automatic phase transition: product → technical
+	if phase == PhaseProduct && len(remainingQuestions) == 0 {
+		log.Info().Str("issue", issue.Key).Msg("product requirements complete, transitioning to technical refinement")
+		ps.PlanningPhase = PhaseTechnical
+		// Reset questions for the new phase — they'll be populated by StartTechnicalRefinement
+		ps.QuestionsJSON = db.EmptyJSONArray
+		if err := p.stateDB.UpdatePlanningState(ps); err != nil {
+			return fmt.Errorf("updating planning state for phase transition: %w", err)
+		}
+		// Immediately start technical refinement
+		return p.StartTechnicalRefinement(ctx, issue, ps)
+	}
+
 	if err := p.stateDB.UpdatePlanningState(ps); err != nil {
 		return fmt.Errorf("updating planning state: %w", err)
 	}
 
-	log.Info().Str("issue", issue.Key).Int("remaining_questions", len(remainingQuestions)).Msg("planning comment updated")
+	log.Info().Str("issue", issue.Key).Int("remaining_questions", len(remainingQuestions)).Str("phase", phase).Msg("planning comment updated")
 	return nil
+}
+
+// StartTechnicalRefinement begins the technical refinement phase.
+// Called automatically when product requirements are complete.
+func (p *Planner) StartTechnicalRefinement(ctx context.Context, issue tracker.Issue, ps *db.PlanningState) error {
+	log.Info().Str("issue", issue.Key).Msg("starting technical refinement phase")
+
+	var images []string
+	_ = json.Unmarshal([]byte(ps.ImageRefsJSON), &images)
+
+	// Generate technical refinement comment via claude
+	prompt, err := worker.RenderPrompt("planning_technical_initial.md.tmpl", map[string]interface{}{
+		"IssueKey":         issue.Key,
+		"IssueTitle":       issue.Title,
+		"Description":      issue.Description,
+		"BotDisplayName":   p.cfg.BotDisplayName,
+		"Images":           images,
+		"ReadyInstruction": p.tracker.ReadySignalInstruction(),
+	})
+	if err != nil {
+		return fmt.Errorf("rendering technical planning prompt: %w", err)
+	}
+
+	result, err := worker.RunClaude(ctx, prompt, p.cfg.TargetRepoPath, p.cfg.PlanningModel)
+	if err != nil {
+		return fmt.Errorf("running technical planning claude: %w", err)
+	}
+
+	cleanOutput := stripPreamble(result.Output, p.cfg.BotDisplayName)
+	questions := parseQuestions(cleanOutput)
+	questionsJSON, _ := json.Marshal(questions)
+
+	output := ensureCorrectTechnicalHeading(cleanOutput, len(questions) == 0, p.cfg.BotDisplayName)
+
+	// Update the existing bot comment with the technical analysis
+	if !p.cfg.DryRun {
+		if ps.BotCommentID != "" {
+			if err := p.tracker.UpdateComment(ctx, issue.Key, ps.BotCommentID, output); err != nil {
+				log.Warn().Err(err).Str("issue", issue.Key).Msg("failed to update comment for technical phase, posting new one")
+				newID, postErr := p.tracker.AddCommentReturningID(ctx, issue.Key, output)
+				if postErr != nil {
+					return fmt.Errorf("posting technical planning comment: %w", postErr)
+				}
+				ps.BotCommentID = newID
+			}
+		} else {
+			newID, err := p.tracker.AddCommentReturningID(ctx, issue.Key, output)
+			if err != nil {
+				return fmt.Errorf("posting technical planning comment: %w", err)
+			}
+			ps.BotCommentID = newID
+		}
+	}
+
+	now := time.Now().UTC()
+	ps.QuestionsJSON = string(questionsJSON)
+	ps.PlanningPhase = PhaseTechnical
+	ps.LastSystemCommentAt = &now
+	if err := p.stateDB.UpdatePlanningState(ps); err != nil {
+		return fmt.Errorf("updating planning state for technical phase: %w", err)
+	}
+
+	log.Info().Str("issue", issue.Key).Int("questions", len(questions)).Str("phase", PhaseTechnical).Msg("technical refinement started")
+	return nil
+}
+
+// IsProductPhaseComplete returns true if the planning is in the technical phase
+// (meaning product refinement has already completed).
+func IsProductPhaseComplete(ps *db.PlanningState) bool {
+	return ps.PlanningPhase == PhaseTechnical
+}
+
+// IsTechnicalPhaseComplete returns true if the planning is in the technical phase
+// and there are no remaining open questions.
+func IsTechnicalPhaseComplete(ps *db.PlanningState) bool {
+	if ps.PlanningPhase != PhaseTechnical {
+		return false
+	}
+	var questions []string
+	_ = json.Unmarshal([]byte(ps.QuestionsJSON), &questions)
+	return len(questions) == 0
 }
 
 // CheckReadySignal detects if a human has signalled readiness for implementation.
 func (p *Planner) CheckReadySignal(ctx context.Context, issue tracker.Issue, ps *db.PlanningState) (bool, error) {
 	return p.tracker.IsReadySignal(ctx, issue, ps.BotCommentID)
+}
+
+// ShouldAutoLaunch returns true if auto-launch is configured and conditions are met:
+// the ticket is assigned to the bot, product refinement is done, and technical refinement
+// has no open questions.
+func (p *Planner) ShouldAutoLaunch(issue tracker.Issue, ps *db.PlanningState) bool {
+	if !p.cfg.AutoLaunchImplementation {
+		return false
+	}
+	if !issue.IsAssignedTo(p.botUserID) {
+		return false
+	}
+	return IsTechnicalPhaseComplete(ps)
 }
 
 // CompletePlanning finalizes the planning phase. The description IS the spec,
@@ -213,14 +344,14 @@ func (p *Planner) CompletePlanning(ctx context.Context, issue tracker.Issue, ps 
 
 	// Update the bot's comment to indicate implementation is starting
 	if !p.cfg.DryRun && ps.BotCommentID != "" {
-		finalComment := fmt.Sprintf("## %s — Implementation Started\n\nAll planning questions have been resolved. Implementation has begun based on the current issue description.",
+		finalComment := fmt.Sprintf("## %s — Implementation Started\n\nAll product and technical refinement questions have been resolved. Implementation has begun based on the current issue description.",
 			p.cfg.BotDisplayName)
 		if err := p.tracker.UpdateComment(ctx, issue.Key, ps.BotCommentID, finalComment); err != nil {
 			log.Warn().Err(err).Msg("failed to update bot comment for completion")
 		}
 	}
 
-	// Clear the ready signal if present (best-effort, avoids unnecessary API call)
+	// Clear the ready signal if present (best-effort)
 	if ready, _ := p.tracker.IsReadySignal(ctx, issue, ps.BotCommentID); ready {
 		if err := p.tracker.ClearReadySignal(ctx, issue.Key); err != nil {
 			log.Warn().Err(err).Str("issue", issue.Key).Msg("failed to clear ready signal after completing planning")
@@ -252,10 +383,19 @@ func (p *Planner) CheckTimeout(ctx context.Context, issue tracker.Issue, ps *db.
 		return p.stateDB.UpdatePlanningState(ps)
 	}
 
+	phase := ps.PlanningPhase
+	if phase == "" {
+		phase = PhaseProduct
+	}
+
 	if daysSinceActivity >= reminderDays {
 		if !p.cfg.DryRun {
-			reminder := fmt.Sprintf("## %s — Reminder\n\nThis planning conversation has been waiting for a response for %d days. Please update the issue description to continue or %s.",
-				p.cfg.BotDisplayName, int(daysSinceActivity), p.tracker.ReadySignalInstruction())
+			phaseLabel := "product requirements refinement"
+			if phase == PhaseTechnical {
+				phaseLabel = "technical refinement"
+			}
+			reminder := fmt.Sprintf("## %s — Reminder\n\nThis %s conversation has been waiting for a response for %d days. Please update the issue description to continue or %s.",
+				p.cfg.BotDisplayName, phaseLabel, int(daysSinceActivity), p.tracker.ReadySignalInstruction())
 			return p.tracker.AddComment(ctx, issue.Key, reminder)
 		}
 	}
@@ -358,16 +498,28 @@ func stripPreamble(output, botName string) string {
 	return output
 }
 
-// ensureCorrectHeading fixes the comment heading to match the question state.
-// When noQuestions is true, ensures "Planning Complete"; otherwise ensures "Planning".
-func ensureCorrectHeading(output string, noQuestions bool, botName string) string {
-	planning := fmt.Sprintf("## %s — Planning\n", botName)
-	planningComplete := fmt.Sprintf("## %s — Planning Complete\n", botName)
+// ensureCorrectProductHeading fixes the comment heading to match the question state
+// during the product requirements refinement phase.
+func ensureCorrectProductHeading(output string, noQuestions bool, botName string) string {
+	active := fmt.Sprintf("## %s — Product Requirements Refinement\n", botName)
+	complete := fmt.Sprintf("## %s — Product Requirements Complete\n", botName)
 
 	if noQuestions {
-		return strings.Replace(output, planning, planningComplete, 1)
+		return strings.Replace(output, active, complete, 1)
 	}
-	return strings.Replace(output, planningComplete, planning, 1)
+	return strings.Replace(output, complete, active, 1)
+}
+
+// ensureCorrectTechnicalHeading fixes the comment heading to match the question state
+// during the technical refinement phase.
+func ensureCorrectTechnicalHeading(output string, noQuestions bool, botName string) string {
+	active := fmt.Sprintf("## %s — Technical Refinement\n", botName)
+	complete := fmt.Sprintf("## %s — Technical Refinement Complete\n", botName)
+
+	if noQuestions {
+		return strings.Replace(output, active, complete, 1)
+	}
+	return strings.Replace(output, complete, active, 1)
 }
 
 func isImageMime(mime string) bool {

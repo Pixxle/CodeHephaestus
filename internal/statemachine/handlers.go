@@ -33,10 +33,11 @@ func (h *Handlers) HandleNewIssue(ctx context.Context, item *WorkItem) error {
 }
 
 // HandlePlanningConversation continues the planning conversation,
-// checking for the ready signal first.
+// checking for the ready signal first, then handling phase transitions.
 func (h *Handlers) HandlePlanningConversation(ctx context.Context, item *WorkItem) error {
 	ps := item.Context["planning_state"].(*db.PlanningState)
 
+	// Check for explicit ready signal (human approval to move to implementation)
 	ready, err := h.m.planner.CheckReadySignal(ctx, item.Issue, ps)
 	if err != nil {
 		log.Warn().Err(err).Msg("error checking ready signal")
@@ -52,7 +53,24 @@ func (h *Handlers) HandlePlanningConversation(ctx context.Context, item *WorkIte
 		log.Warn().Err(err).Msg("error checking planning timeout")
 	}
 
-	return h.m.planner.ContinuePlanning(ctx, item.Issue, ps)
+	// ContinuePlanning handles phase transitions internally (product → technical)
+	if err := h.m.planner.ContinuePlanning(ctx, item.Issue, ps); err != nil {
+		return err
+	}
+
+	// After continuing, check if auto-launch conditions are met:
+	// ticket assigned + both phases complete + auto-launch enabled
+	// Re-fetch state since ContinuePlanning may have updated the phase
+	updatedPS, err := h.m.stateDB.GetPlanningState(item.Issue.Key)
+	if err != nil || updatedPS == nil {
+		return nil
+	}
+	if h.m.planner.ShouldAutoLaunch(item.Issue, updatedPS) {
+		log.Info().Str("issue", item.Issue.Key).Msg("auto-launching implementation (both planning phases complete, ticket assigned)")
+		return h.transitionToImplementation(ctx, item.Issue, updatedPS)
+	}
+
+	return nil
 }
 
 // HandlePlanningReady transitions a planning-complete issue into implementation.
