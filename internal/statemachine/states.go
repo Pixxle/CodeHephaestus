@@ -45,9 +45,7 @@ type Transition struct {
 // Note: These use tracker-level concepts (not dispatch states like StateCIFailure).
 var ValidTransitions = []Transition{
 	{StateTodo, StatePlanning, "issue detected with planning label or assignment"},
-	{StatePlanning, StatePlanning, "description updated during product or technical refinement"},
-	{StatePlanning, StatePlanning, "product refinement complete, auto-transition to technical refinement"},
-	{StatePlanning, StatePlanning, "product requirements gaps found, revert from technical to product refinement"},
+	{StatePlanning, StatePlanning, "description updated, phase auto-transition (product↔technical), or product gaps revert"},
 	{StatePlanning, StatePlanningReady, "human signals ready or auto-launch after both phases complete"},
 	{StatePlanningReady, "in_progress", "description updated, implementation begins"},
 	{"in_progress", "in_progress", "CI failure fixed or devil's advocate rework"},
