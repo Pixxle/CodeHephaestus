@@ -190,29 +190,7 @@ func (p *Planner) ContinuePlanning(ctx context.Context, issue tracker.Issue, ps 
 	if phase == PhaseTechnical {
 		productGaps := parseProductGaps(cleanOutput)
 		if len(productGaps) > 0 {
-			log.Info().Str("issue", issue.Key).Int("product_gaps", len(productGaps)).
-				Msg("product requirements gaps detected during technical refinement, reverting to product phase")
-			// Transition back to product phase with the gaps as questions
-			questionsJSON, _ := json.Marshal(productGaps)
-			now := time.Now().UTC()
-			ps.LastSeenDescription = issue.Description
-			ps.QuestionsJSON = string(questionsJSON)
-			ps.PlanningPhase = PhaseProduct
-			ps.LastSystemCommentAt = &now
-
-			// Rewrite heading to reflect product phase
-			output := ensureCorrectProductHeading(cleanOutput, false, p.cfg.BotDisplayName)
-			// Replace "Technical Refinement" heading with product heading if present
-			output = strings.Replace(output,
-				fmt.Sprintf("## %s — Technical Refinement\n", p.cfg.BotDisplayName),
-				fmt.Sprintf("## %s — Product Requirements Refinement\n", p.cfg.BotDisplayName), 1)
-
-			p.updateBotComment(ctx, issue.Key, ps, output)
-
-			if err := p.stateDB.UpdatePlanningState(ps); err != nil {
-				return fmt.Errorf("updating planning state for product revert: %w", err)
-			}
-			return nil
+			return p.revertToProductPhase(ctx, issue, ps, productGaps)
 		}
 	}
 
@@ -289,23 +267,7 @@ func (p *Planner) StartTechnicalRefinement(ctx context.Context, issue tracker.Is
 	// Check if the initial technical analysis immediately found product gaps
 	productGaps := parseProductGaps(cleanOutput)
 	if len(productGaps) > 0 {
-		log.Info().Str("issue", issue.Key).Int("product_gaps", len(productGaps)).
-			Msg("product requirements gaps detected at start of technical refinement, reverting to product phase")
-		questionsJSON, _ := json.Marshal(productGaps)
-		now := time.Now().UTC()
-		ps.QuestionsJSON = string(questionsJSON)
-		ps.PlanningPhase = PhaseProduct
-		ps.LastSystemCommentAt = &now
-
-		output := strings.Replace(cleanOutput,
-			fmt.Sprintf("## %s — Technical Refinement\n", p.cfg.BotDisplayName),
-			fmt.Sprintf("## %s — Product Requirements Refinement\n", p.cfg.BotDisplayName), 1)
-		p.updateBotComment(ctx, issue.Key, ps, output)
-
-		if err := p.stateDB.UpdatePlanningState(ps); err != nil {
-			return fmt.Errorf("updating planning state for product revert: %w", err)
-		}
-		return nil
+		return p.revertToProductPhase(ctx, issue, ps, productGaps)
 	}
 
 	questions := parseQuestions(cleanOutput)
@@ -517,6 +479,54 @@ func (p *Planner) collectImages(ctx context.Context, issue tracker.Issue) ([]str
 	}
 
 	return imagePaths, nil
+}
+
+// revertToProductPhase transitions the issue back from technical to product refinement
+// when the AI identifies product requirement gaps. It generates a clean product refinement
+// comment that preserves the existing product summary and lists the gaps as open questions.
+func (p *Planner) revertToProductPhase(ctx context.Context, issue tracker.Issue, ps *db.PlanningState, productGaps []string) error {
+	log.Info().Str("issue", issue.Key).Int("product_gaps", len(productGaps)).
+		Msg("product requirements gaps detected during technical refinement, reverting to product phase")
+
+	questionsJSON, _ := json.Marshal(productGaps)
+	now := time.Now().UTC()
+	ps.LastSeenDescription = issue.Description
+	ps.QuestionsJSON = string(questionsJSON)
+	ps.PlanningPhase = PhaseProduct
+	ps.LastSystemCommentAt = &now
+
+	// Build a clean product refinement comment that includes the prior product
+	// summary for context and lists the newly discovered gaps as open questions.
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("## %s — Product Requirements Refinement\n\n", p.cfg.BotDisplayName))
+	sb.WriteString("### Context\n")
+	sb.WriteString("During technical refinement, product requirement gaps were identified that need to be resolved before implementation can proceed.\n\n")
+
+	if ps.ProductSummary != "" {
+		sb.WriteString("### Previous Product Decisions\n")
+		// Extract the body from the previous product summary (skip the heading)
+		summary := ps.ProductSummary
+		if idx := strings.Index(summary, "\n"); idx >= 0 {
+			summary = strings.TrimSpace(summary[idx:])
+		}
+		sb.WriteString(summary)
+		sb.WriteString("\n\n")
+	}
+
+	sb.WriteString("### Open Questions\n")
+	for i, gap := range productGaps {
+		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, gap))
+	}
+	sb.WriteString(fmt.Sprintf("\n---\nTo address these questions, please **update the issue description** above.\nI will re-analyze when the description changes.\n\nWhen satisfied, %s.\n",
+		p.tracker.ReadySignalInstruction()))
+
+	output := sb.String()
+	p.updateBotComment(ctx, issue.Key, ps, output)
+
+	if err := p.stateDB.UpdatePlanningState(ps); err != nil {
+		return fmt.Errorf("updating planning state for product revert: %w", err)
+	}
+	return nil
 }
 
 // updateBotComment updates the bot's comment in-place, falling back to a new comment if update fails.
