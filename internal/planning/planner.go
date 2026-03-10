@@ -37,6 +37,14 @@ const (
 	PhaseTechnical = "technical"
 )
 
+// resolvePhase returns the effective phase, defaulting to PhaseProduct for empty values.
+func resolvePhase(phase string) string {
+	if phase == "" {
+		return PhaseProduct
+	}
+	return phase
+}
+
 type Planner struct {
 	cfg       *config.Config
 	tracker   tracker.TaskTracker
@@ -142,10 +150,7 @@ func (p *Planner) ContinuePlanning(ctx context.Context, issue tracker.Issue, ps 
 		return nil
 	}
 
-	phase := ps.PlanningPhase
-	if phase == "" {
-		phase = PhaseProduct
-	}
+	phase := resolvePhase(ps.PlanningPhase)
 
 	// Load open questions
 	var openQuestions []string
@@ -297,12 +302,13 @@ func IsProductPhaseComplete(ps *db.PlanningState) bool {
 // IsTechnicalPhaseComplete returns true if the planning is in the technical phase
 // and there are no remaining open questions.
 func IsTechnicalPhaseComplete(ps *db.PlanningState) bool {
-	if ps.PlanningPhase != PhaseTechnical {
-		return false
-	}
-	var questions []string
-	_ = json.Unmarshal([]byte(ps.QuestionsJSON), &questions)
-	return len(questions) == 0
+	return ps.PlanningPhase == PhaseTechnical && isEmptyJSONArray(ps.QuestionsJSON)
+}
+
+// isEmptyJSONArray checks if a JSON string represents an empty or absent array
+// without allocating or parsing.
+func isEmptyJSONArray(s string) bool {
+	return s == db.EmptyJSONArray || s == "" || s == "null"
 }
 
 // CheckReadySignal detects if a human has signalled readiness for implementation.
@@ -314,13 +320,13 @@ func (p *Planner) CheckReadySignal(ctx context.Context, issue tracker.Issue, ps 
 // the ticket is assigned to the bot, product refinement is done, and technical refinement
 // has no open questions.
 func (p *Planner) ShouldAutoLaunch(issue tracker.Issue, ps *db.PlanningState) bool {
-	if !p.cfg.AutoLaunchImplementation {
-		return false
-	}
-	if !issue.IsAssignedTo(p.botUserID) {
-		return false
-	}
-	return IsTechnicalPhaseComplete(ps)
+	return AutoLaunchReady(p.cfg.AutoLaunchImplementation, p.botUserID, issue, ps)
+}
+
+// AutoLaunchReady is the package-level predicate for auto-launch conditions.
+// Shared by the dispatcher and the handler to avoid duplicating the condition.
+func AutoLaunchReady(autoLaunchEnabled bool, botUserID string, issue tracker.Issue, ps *db.PlanningState) bool {
+	return autoLaunchEnabled && issue.IsAssignedTo(botUserID) && IsTechnicalPhaseComplete(ps)
 }
 
 // CompletePlanning finalizes the planning phase. The description IS the spec,
@@ -337,11 +343,10 @@ func (p *Planner) CompletePlanning(ctx context.Context, issue tracker.Issue, ps 
 		}
 	}
 
-	// Clear the ready signal if present (best-effort)
-	if ready, _ := p.tracker.IsReadySignal(ctx, issue, ps.BotCommentID); ready {
-		if err := p.tracker.ClearReadySignal(ctx, issue.Key); err != nil {
-			log.Warn().Err(err).Str("issue", issue.Key).Msg("failed to clear ready signal after completing planning")
-		}
+	// Clear the ready signal (best-effort, no-op if absent).
+	// The caller has already confirmed the signal or auto-launch condition.
+	if err := p.tracker.ClearReadySignal(ctx, issue.Key); err != nil {
+		log.Warn().Err(err).Str("issue", issue.Key).Msg("failed to clear ready signal after completing planning")
 	}
 
 	ps.Status = StatusComplete
@@ -369,10 +374,7 @@ func (p *Planner) CheckTimeout(ctx context.Context, issue tracker.Issue, ps *db.
 		return p.stateDB.UpdatePlanningState(ps)
 	}
 
-	phase := ps.PlanningPhase
-	if phase == "" {
-		phase = PhaseProduct
-	}
+	phase := resolvePhase(ps.PlanningPhase)
 
 	if daysSinceActivity >= reminderDays {
 		if !p.cfg.DryRun {
@@ -566,11 +568,11 @@ func stripPreamble(output, botName string) string {
 	return output
 }
 
-// ensureCorrectProductHeading fixes the comment heading to match the question state
-// during the product requirements refinement phase.
-func ensureCorrectProductHeading(output string, noQuestions bool, botName string) string {
-	active := fmt.Sprintf("## %s — Product Requirements Refinement\n", botName)
-	complete := fmt.Sprintf("## %s — Product Requirements Complete\n", botName)
+// ensureCorrectHeading fixes the comment heading to match the question state.
+// activeLabel/completeLabel are the heading suffixes (e.g. "Product Requirements Refinement" / "Product Requirements Complete").
+func ensureCorrectHeading(output string, noQuestions bool, botName, activeLabel, completeLabel string) string {
+	active := fmt.Sprintf("## %s — %s\n", botName, activeLabel)
+	complete := fmt.Sprintf("## %s — %s\n", botName, completeLabel)
 
 	if noQuestions {
 		return strings.Replace(output, active, complete, 1)
@@ -578,16 +580,12 @@ func ensureCorrectProductHeading(output string, noQuestions bool, botName string
 	return strings.Replace(output, complete, active, 1)
 }
 
-// ensureCorrectTechnicalHeading fixes the comment heading to match the question state
-// during the technical refinement phase.
-func ensureCorrectTechnicalHeading(output string, noQuestions bool, botName string) string {
-	active := fmt.Sprintf("## %s — Technical Refinement\n", botName)
-	complete := fmt.Sprintf("## %s — Technical Refinement Complete\n", botName)
+func ensureCorrectProductHeading(output string, noQuestions bool, botName string) string {
+	return ensureCorrectHeading(output, noQuestions, botName, "Product Requirements Refinement", "Product Requirements Complete")
+}
 
-	if noQuestions {
-		return strings.Replace(output, active, complete, 1)
-	}
-	return strings.Replace(output, complete, active, 1)
+func ensureCorrectTechnicalHeading(output string, noQuestions bool, botName string) string {
+	return ensureCorrectHeading(output, noQuestions, botName, "Technical Refinement", "Technical Refinement Complete")
 }
 
 func isImageMime(mime string) bool {

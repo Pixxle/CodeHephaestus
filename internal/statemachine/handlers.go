@@ -59,15 +59,17 @@ func (h *Handlers) HandlePlanningConversation(ctx context.Context, item *WorkIte
 	}
 
 	// After continuing, check if auto-launch conditions are met:
-	// ticket assigned + both phases complete + auto-launch enabled
-	// Re-fetch state since ContinuePlanning may have updated the phase
-	updatedPS, err := h.m.stateDB.GetPlanningState(item.Issue.Key)
-	if err != nil || updatedPS == nil {
-		return nil
-	}
-	if h.m.planner.ShouldAutoLaunch(item.Issue, updatedPS) {
-		log.Info().Str("issue", item.Issue.Key).Msg("auto-launching implementation (both planning phases complete, ticket assigned)")
-		return h.transitionToImplementation(ctx, item.Issue, updatedPS)
+	// ticket assigned + both phases complete + auto-launch enabled.
+	// Only re-fetch state when auto-launch is enabled to avoid unnecessary DB reads.
+	if h.m.cfg.AutoLaunchImplementation {
+		updatedPS, err := h.m.stateDB.GetPlanningState(item.Issue.Key)
+		if err != nil || updatedPS == nil {
+			return nil
+		}
+		if h.m.planner.ShouldAutoLaunch(item.Issue, updatedPS) {
+			log.Info().Str("issue", item.Issue.Key).Msg("auto-launching implementation (both planning phases complete, ticket assigned)")
+			return h.transitionToImplementation(ctx, item.Issue, updatedPS)
+		}
 	}
 
 	return nil

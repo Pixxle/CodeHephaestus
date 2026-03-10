@@ -58,6 +58,7 @@ func TestPlanningStateCRUD(t *testing.T) {
 		BotCommentID:        "comment-123",
 		LastSeenDescription: "Original desc",
 		QuestionsJSON:       `["Q1?"]`,
+		PlanningPhase:       "product",
 	}
 
 	// Insert

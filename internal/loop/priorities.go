@@ -263,9 +263,7 @@ func (pd *PriorityDispatcher) checkPlanningReady(ctx context.Context, activePlan
 		}
 
 		// Check for auto-launch: both phases complete + assigned + config enabled
-		if pd.cfg.AutoLaunchImplementation &&
-			issue.IsAssignedTo(pd.botUserID) &&
-			planning.IsTechnicalPhaseComplete(ps) {
+		if planning.AutoLaunchReady(pd.cfg.AutoLaunchImplementation, pd.botUserID, issue, ps) {
 			log.Info().Str("issue", issue.Key).Msg("auto-launch conditions met: both planning phases complete and ticket assigned")
 			return &statemachine.WorkItem{
 				State: statemachine.StatePlanningReady,

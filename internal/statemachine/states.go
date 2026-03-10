@@ -30,6 +30,10 @@ const (
 	// Action: classify and respond to review feedback.
 	StateInReview State = "in_review"
 
+	// StateInProgress — issue is being implemented. Used in transitions table only;
+	// the dispatcher does not emit this state directly (it uses StateCIFailure instead).
+	StateInProgress State = "in_progress"
+
 	// StateDone — PR merged, issue closed. No dispatch action (housekeeping only).
 	StateDone State = "done"
 )
@@ -47,9 +51,9 @@ var ValidTransitions = []Transition{
 	{StateTodo, StatePlanning, "issue detected with planning label or assignment"},
 	{StatePlanning, StatePlanning, "description updated, phase auto-transition (product↔technical), or product gaps revert"},
 	{StatePlanning, StatePlanningReady, "human signals ready or auto-launch after both phases complete"},
-	{StatePlanningReady, "in_progress", "description updated, implementation begins"},
-	{"in_progress", "in_progress", "CI failure fixed or devil's advocate rework"},
-	{"in_progress", StateInReview, "CI passes on draft PR"},
-	{StateInReview, "in_progress", "reviewer requests code changes"},
+	{StatePlanningReady, StateInProgress, "description updated, implementation begins"},
+	{StateInProgress, StateInProgress, "CI failure fixed or devil's advocate rework"},
+	{StateInProgress, StateInReview, "CI passes on draft PR"},
+	{StateInReview, StateInProgress, "reviewer requests code changes"},
 	{StateInReview, StateDone, "PR merged"},
 }

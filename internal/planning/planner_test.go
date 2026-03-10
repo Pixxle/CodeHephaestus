@@ -266,6 +266,7 @@ func TestIsTechnicalPhaseComplete(t *testing.T) {
 		{"technical with no questions", PhaseTechnical, "[]", true},
 		{"technical with questions", PhaseTechnical, `["Q1?"]`, false},
 		{"technical with empty json", PhaseTechnical, "", true},
+		{"technical with null json", PhaseTechnical, "null", true},
 		{"empty phase", "", "[]", false},
 	}
 

@@ -152,10 +152,6 @@ func (s *StateDB) GetPlanningState(issueKey string) (*PlanningState, error) {
 
 func (s *StateDB) InsertPlanningState(ps *PlanningState) error {
 	now := timeStr(time.Now().UTC())
-	phase := ps.PlanningPhase
-	if phase == "" {
-		phase = "product"
-	}
 	_, err := s.db.Exec(`INSERT INTO planning_state
 		(issue_key, conversation_json, participants_json, status, original_description,
 		figma_urls_json, image_refs_json, last_human_response_at, last_system_comment_at,
@@ -166,7 +162,7 @@ func (s *StateDB) InsertPlanningState(ps *PlanningState) error {
 		ps.OriginalDescription, ps.FigmaURLsJSON, ps.ImageRefsJSON,
 		nullTimeStr(ps.LastHumanResponseAt), nullTimeStr(ps.LastSystemCommentAt),
 		now, now, ps.BotCommentID, ps.LastSeenDescription, ps.QuestionsJSON,
-		phase, ps.ProductSummary)
+		ps.PlanningPhase, ps.ProductSummary)
 	return err
 }
 
