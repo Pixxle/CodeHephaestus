@@ -1,5 +1,7 @@
 package securityengineer
 
+import "github.com/pixxle/solomon/internal/db"
+
 // Severity levels.
 const (
 	SeverityCritical = "CRITICAL"
@@ -35,6 +37,15 @@ const (
 	ScanStatusCompleted = "completed"
 	ScanStatusFailed    = "failed"
 )
+
+// PersistResult holds the outcome of persisting findings, including sync data.
+type PersistResult struct {
+	NewCount       int
+	OpenCount      int
+	MitigatedCount int
+	Mitigated      []*db.SecurityFinding // just-mitigated findings with Jira tickets
+	Regressed      []*db.SecurityFinding // reappeared findings with Jira tickets
+}
 
 // RawFinding is the output from an individual agent before DB persistence.
 type RawFinding struct {

@@ -351,6 +351,14 @@ func nullTimeStr(t *time.Time) interface{} {
 	return timeStr(*t)
 }
 
+// securityFindingsCols is the column list shared by all security_findings queries.
+const securityFindingsCols = `id, repo_name, scan_id, agent, finding_id, title, description,
+		severity, confidence, priority, category, cwe_id, owasp_category,
+		file_path, line_start, line_end, snippet, evidence, source, source_tool,
+		remediation, remediation_effort, code_suggestion, false_positive_risk,
+		status, fingerprint, first_seen_scan_id, last_seen_scan_id, jira_issue_key,
+		created_at, updated_at`
+
 // Security scan and finding types
 
 type SecurityScan struct {
@@ -488,13 +496,20 @@ func (s *StateDB) UpsertSecurityFinding(f *SecurityFinding) error {
 
 // GetOpenSecurityFindings returns all open findings for a repo.
 func (s *StateDB) GetOpenSecurityFindings(repoName string) ([]*SecurityFinding, error) {
-	rows, err := s.db.Query(`SELECT id, repo_name, scan_id, agent, finding_id, title, description,
-		severity, confidence, priority, category, cwe_id, owasp_category,
-		file_path, line_start, line_end, snippet, evidence, source, source_tool,
-		remediation, remediation_effort, code_suggestion, false_positive_risk,
-		status, fingerprint, first_seen_scan_id, last_seen_scan_id, jira_issue_key,
-		created_at, updated_at
+	rows, err := s.db.Query(`SELECT `+securityFindingsCols+`
 		FROM security_findings WHERE repo_name = ? AND status = 'open'`, repoName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanSecurityFindings(rows)
+}
+
+// GetMitigatedSecurityFindingsWithJira returns mitigated findings that have Jira tickets.
+func (s *StateDB) GetMitigatedSecurityFindingsWithJira(repoName string) ([]*SecurityFinding, error) {
+	rows, err := s.db.Query(`SELECT `+securityFindingsCols+`
+		FROM security_findings
+		WHERE repo_name = ? AND status = 'mitigated' AND jira_issue_key IS NOT NULL AND jira_issue_key != ''`, repoName)
 	if err != nil {
 		return nil, err
 	}
@@ -541,12 +556,7 @@ func (s *StateDB) GetSecurityFindingsWithoutJira(repoName string, minSeverity st
 	}
 
 	// Build placeholders
-	query := `SELECT id, repo_name, scan_id, agent, finding_id, title, description,
-		severity, confidence, priority, category, cwe_id, owasp_category,
-		file_path, line_start, line_end, snippet, evidence, source, source_tool,
-		remediation, remediation_effort, code_suggestion, false_positive_risk,
-		status, fingerprint, first_seen_scan_id, last_seen_scan_id, jira_issue_key,
-		created_at, updated_at
+	query := `SELECT ` + securityFindingsCols + `
 		FROM security_findings
 		WHERE repo_name = ? AND status = 'open' AND (jira_issue_key IS NULL OR jira_issue_key = '') AND severity IN (`
 	args := []interface{}{repoName}

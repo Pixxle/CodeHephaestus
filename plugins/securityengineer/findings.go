@@ -11,10 +11,13 @@ import (
 )
 
 // PersistFindings stores pipeline findings in the database, diffing against existing.
-func PersistFindings(stateDB *db.StateDB, repoName string, scanID int64, findings []*RawFinding) (newCount, openCount, mitigatedCount int, err error) {
+// Returns a PersistResult with counts and lists of findings needing Jira sync.
+func PersistFindings(stateDB *db.StateDB, repoName string, scanID int64, findings []*RawFinding) (*PersistResult, error) {
+	result := &PersistResult{}
+
 	existing, err := stateDB.GetOpenSecurityFindings(repoName)
 	if err != nil {
-		return 0, 0, 0, err
+		return nil, err
 	}
 
 	existingFPs := make(map[string]*db.SecurityFinding)
@@ -23,6 +26,7 @@ func PersistFindings(stateDB *db.StateDB, repoName string, scanID int64, finding
 	}
 
 	seenFPs := make(map[string]bool)
+	var newFingerprints []string
 
 	for _, raw := range findings {
 		seenFPs[raw.Fingerprint] = true
@@ -62,11 +66,29 @@ func PersistFindings(stateDB *db.StateDB, repoName string, scanID int64, finding
 		}
 
 		if err := stateDB.UpsertSecurityFinding(f); err != nil {
-			return 0, 0, 0, fmt.Errorf("upsert finding: %w", err)
+			return nil, fmt.Errorf("upsert finding: %w", err)
 		}
 
 		if _, existed := existingFPs[raw.Fingerprint]; !existed {
-			newCount++
+			result.NewCount++
+			newFingerprints = append(newFingerprints, raw.Fingerprint)
+		}
+	}
+
+	// Detect regressions: only query mitigated findings if there are new ones
+	if len(newFingerprints) > 0 {
+		mitigatedWithJira, err := stateDB.GetMitigatedSecurityFindingsWithJira(repoName)
+		if err != nil {
+			return nil, fmt.Errorf("get mitigated findings with jira: %w", err)
+		}
+		mitigatedFPs := make(map[string]*db.SecurityFinding, len(mitigatedWithJira))
+		for _, f := range mitigatedWithJira {
+			mitigatedFPs[f.Fingerprint] = f
+		}
+		for _, fp := range newFingerprints {
+			if mf, regressed := mitigatedFPs[fp]; regressed {
+				result.Regressed = append(result.Regressed, mf)
+			}
 		}
 	}
 
@@ -75,16 +97,20 @@ func PersistFindings(stateDB *db.StateDB, repoName string, scanID int64, finding
 			if err := stateDB.MarkSecurityFindingMitigated(ef.ID, scanID); err != nil {
 				log.Warn().Err(err).Int64("finding_id", ef.ID).Msg("failed to mark finding mitigated")
 			}
-			mitigatedCount++
+			result.MitigatedCount++
+			if ef.JiraIssueKey != "" {
+				result.Mitigated = append(result.Mitigated, ef)
+			}
 		}
 	}
 
-	openCount = len(findings) - newCount + (len(existing) - mitigatedCount)
-	if openCount < 0 {
-		openCount = 0
+	// Fix 5: Simplified OpenCount — all current findings minus those that were already tracked
+	result.OpenCount = len(findings) + len(existing) - result.MitigatedCount
+	if result.OpenCount < 0 {
+		result.OpenCount = 0
 	}
 
-	return newCount, openCount + newCount, mitigatedCount, nil
+	return result, nil
 }
 
 // getCommitHash returns the HEAD commit hash for a repo path.

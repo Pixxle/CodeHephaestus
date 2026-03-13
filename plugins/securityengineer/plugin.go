@@ -143,6 +143,7 @@ func (p *SecurityEngineerPlugin) runQuickScan(ctx context.Context, repoName, rep
 
 	mitigated := 0
 	stillOpen := 0
+	var mitigatedWithJira []*db.SecurityFinding
 
 	// Cache file contents to avoid reading the same file multiple times
 	fileCache := make(map[string][]byte)
@@ -166,19 +167,28 @@ func (p *SecurityEngineerPlugin) runQuickScan(ctx context.Context, repoName, rep
 			}
 		}
 
+		isMitigated := false
 		if content == nil {
-			p.libs.DB.MarkSecurityFindingMitigated(f.ID, scanID)
-			mitigated++
-			continue
+			isMitigated = true
+		} else if f.Snippet != "" && !strings.Contains(string(content), f.Snippet) {
+			isMitigated = true
 		}
 
-		if f.Snippet != "" && !strings.Contains(string(content), f.Snippet) {
+		if isMitigated {
 			p.libs.DB.MarkSecurityFindingMitigated(f.ID, scanID)
 			mitigated++
+			if f.JiraIssueKey != "" {
+				mitigatedWithJira = append(mitigatedWithJira, f)
+			}
 			continue
 		}
 
 		stillOpen++
+	}
+
+	// Sync Jira for mitigated findings
+	if len(mitigatedWithJira) > 0 {
+		p.syncJiraForMitigated(ctx, mitigatedWithJira, ScanTypeQuick)
 	}
 
 	summaryJSON, _ := json.Marshal(map[string]int{
@@ -220,15 +230,23 @@ func (p *SecurityEngineerPlugin) runFullScan(ctx context.Context, repoName, repo
 		return fmt.Errorf("pipeline: %w", err)
 	}
 
-	newCount, openCount, mitigatedCount, err := PersistFindings(p.libs.DB, repoName, scanID, result.Consolidated)
+	persistResult, err := PersistFindings(p.libs.DB, repoName, scanID, result.Consolidated)
 	if err != nil {
 		return fmt.Errorf("persist findings: %w", err)
 	}
 
+	// Sync Jira for mitigated and regressed findings
+	if len(persistResult.Mitigated) > 0 {
+		p.syncJiraForMitigated(ctx, persistResult.Mitigated, ScanTypeFull)
+	}
+	if len(persistResult.Regressed) > 0 {
+		p.syncJiraForRegressed(ctx, persistResult.Regressed, ScanTypeFull)
+	}
+
 	summaryJSON, _ := json.Marshal(map[string]int{
-		"new":       newCount,
-		"open":      openCount,
-		"mitigated": mitigatedCount,
+		"new":       persistResult.NewCount,
+		"open":      persistResult.OpenCount,
+		"mitigated": persistResult.MitigatedCount,
 		"total":     len(result.Consolidated),
 	})
 	p.libs.DB.UpdateSecurityScanStatus(scanID, ScanStatusCompleted, string(summaryJSON))
@@ -236,13 +254,13 @@ func (p *SecurityEngineerPlugin) runFullScan(ctx context.Context, repoName, repo
 	log.Info().
 		Str("repo", repoName).
 		Int("total", len(result.Consolidated)).
-		Int("new", newCount).
-		Int("open", openCount).
-		Int("mitigated", mitigatedCount).
+		Int("new", persistResult.NewCount).
+		Int("open", persistResult.OpenCount).
+		Int("mitigated", persistResult.MitigatedCount).
 		Msg("full scan complete")
 
-	if newCount > 0 || mitigatedCount > 0 {
-		if err := p.libs.Notifier.NotifySecurityScanComplete(ctx, repoName, newCount, openCount, mitigatedCount); err != nil {
+	if persistResult.NewCount > 0 || persistResult.MitigatedCount > 0 {
+		if err := p.libs.Notifier.NotifySecurityScanComplete(ctx, repoName, persistResult.NewCount, persistResult.OpenCount, persistResult.MitigatedCount); err != nil {
 			log.Warn().Err(err).Msg("failed to send security scan Slack notification")
 		}
 	}
@@ -255,9 +273,8 @@ func (p *SecurityEngineerPlugin) runFullScan(ctx context.Context, repoName, repo
 		}
 	}
 
-	findingsForJira, err := p.libs.DB.GetSecurityFindingsWithoutJira(repoName, jiraThreshold)
-	if err != nil {
-		log.Warn().Err(err).Msg("failed to get findings for Jira")
+	if findingsForJira, jiraErr := p.libs.DB.GetSecurityFindingsWithoutJira(repoName, jiraThreshold); jiraErr != nil {
+		log.Warn().Err(jiraErr).Msg("failed to get findings for Jira")
 	} else if len(findingsForJira) > 0 {
 		for _, f := range findingsForJira {
 			title := fmt.Sprintf("[Security] %s: %s", f.Severity, f.Title)
@@ -278,4 +295,33 @@ func (p *SecurityEngineerPlugin) runFullScan(ctx context.Context, repoName, repo
 	}
 
 	return nil
+}
+
+// syncJiraForMitigated transitions resolved findings' Jira tickets to Done.
+func (p *SecurityEngineerPlugin) syncJiraForMitigated(ctx context.Context, findings []*db.SecurityFinding, scanType string) {
+	p.syncJiraFindings(ctx, findings, scanType, p.libs.Config.StatusDone(),
+		"Security finding verified as resolved during %s scan: %q. Closing ticket.",
+		"closed Jira ticket for mitigated finding")
+}
+
+// syncJiraForRegressed reopens Jira tickets for findings that have reappeared.
+func (p *SecurityEngineerPlugin) syncJiraForRegressed(ctx context.Context, findings []*db.SecurityFinding, scanType string) {
+	p.syncJiraFindings(ctx, findings, scanType, p.libs.Config.StatusTodo(),
+		"Security regression detected during %s scan: %q has reappeared. Reopening ticket.",
+		"reopened Jira ticket for regressed finding")
+}
+
+// syncJiraFindings transitions Jira tickets and adds a comment for each finding.
+func (p *SecurityEngineerPlugin) syncJiraFindings(ctx context.Context, findings []*db.SecurityFinding, scanType, targetStatus, commentFmt, logMsg string) {
+	for _, f := range findings {
+		if err := p.libs.Tracker.TransitionIssue(ctx, f.JiraIssueKey, targetStatus); err != nil {
+			log.Warn().Err(err).Str("issue", f.JiraIssueKey).Msg("failed to transition Jira issue")
+			continue
+		}
+		comment := fmt.Sprintf(commentFmt, scanType, f.Title)
+		if err := p.libs.Tracker.AddComment(ctx, f.JiraIssueKey, comment); err != nil {
+			log.Warn().Err(err).Str("issue", f.JiraIssueKey).Msg("failed to add Jira comment")
+		}
+		log.Info().Str("issue", f.JiraIssueKey).Str("finding", f.Title).Msg(logMsg)
+	}
 }
