@@ -305,11 +305,7 @@ func IsProductPhaseComplete(ps *db.PlanningState) bool {
 }
 
 func IsTechnicalPhaseComplete(ps *db.PlanningState) bool {
-	return ps.PlanningPhase == PhaseTechnical && isEmptyJSONArray(ps.QuestionsJSON)
-}
-
-func isEmptyJSONArray(s string) bool {
-	return s == db.EmptyJSONArray || s == "" || s == "null"
+	return ps.PlanningPhase == PhaseTechnical && !ps.HasOpenQuestions()
 }
 
 func (p *Planner) CheckReadySignal(ctx context.Context, issue tracker.Issue, ps *db.PlanningState) (bool, error) {

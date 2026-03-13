@@ -1,6 +1,6 @@
 package db
 
-const schemaVersion = 7
+const schemaVersion = 8
 
 var migrations = [][]string{
 	// v1: Initial schema - each statement separate for SQLite compatibility
@@ -138,5 +138,12 @@ var migrations = [][]string{
 		`CREATE INDEX IF NOT EXISTS idx_security_findings_status ON security_findings(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_security_findings_severity ON security_findings(severity)`,
 		`CREATE INDEX IF NOT EXISTS idx_security_scans_repo ON security_scans(repo_name)`,
+	},
+	// v8: Standup metadata — persist last standup timestamp for delta reporting
+	{
+		`CREATE TABLE IF NOT EXISTS standup_meta (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			last_standup_at TEXT NOT NULL
+		)`,
 	},
 }

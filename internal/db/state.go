@@ -37,6 +37,11 @@ type PlanningState struct {
 	ProductSummary      string
 }
 
+// HasOpenQuestions reports whether the planning state has unanswered questions.
+func (ps *PlanningState) HasOpenQuestions() bool {
+	return ps.QuestionsJSON != "" && ps.QuestionsJSON != EmptyJSONArray && ps.QuestionsJSON != "null"
+}
+
 type PRFeedbackRecord struct {
 	ID          int64
 	IssueKey    string
@@ -188,7 +193,7 @@ func (s *StateDB) UpdatePlanningState(ps *PlanningState) error {
 }
 
 func (s *StateDB) GetActivePlanningStates() ([]*PlanningState, error) {
-	return s.queryPlanningStates("WHERE status = 'active'")
+	return s.queryPlanningStatesArgs("WHERE status = 'active'")
 }
 
 func (s *StateDB) DeletePlanningState(issueKey string) error {
@@ -197,16 +202,20 @@ func (s *StateDB) DeletePlanningState(issueKey string) error {
 }
 
 func (s *StateDB) GetAllPlanningStates() ([]*PlanningState, error) {
-	return s.queryPlanningStates("")
+	return s.queryPlanningStatesArgs("")
 }
 
-func (s *StateDB) queryPlanningStates(whereClause string) ([]*PlanningState, error) {
+func (s *StateDB) GetPlanningStatesUpdatedSince(since time.Time) ([]*PlanningState, error) {
+	return s.queryPlanningStatesArgs("WHERE updated_at >= ?", timeStr(since))
+}
+
+func (s *StateDB) queryPlanningStatesArgs(whereClause string, args ...interface{}) ([]*PlanningState, error) {
 	query := `SELECT issue_key, conversation_json, participants_json, status,
 		original_description, figma_urls_json, image_refs_json,
 		last_human_response_at, last_system_comment_at, created_at, updated_at,
 		bot_comment_id, last_seen_description, questions_json, planning_phase, product_summary
 		FROM planning_state ` + whereClause
-	rows, err := s.db.Query(query)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -332,6 +341,27 @@ func (s *StateDB) UpsertSlackThread(issueKey, threadTS string) error {
 	_, err := s.db.Exec(`INSERT INTO slack_threads (issue_key, thread_ts, created_at) VALUES (?, ?, ?)
 		ON CONFLICT(issue_key) DO UPDATE SET thread_ts = ?`,
 		issueKey, threadTS, timeStr(time.Now().UTC()), threadTS)
+	return err
+}
+
+// Standup metadata
+
+func (s *StateDB) GetLastStandupTime() (time.Time, error) {
+	var ts string
+	err := s.db.QueryRow("SELECT last_standup_at FROM standup_meta WHERE id = 1").Scan(&ts)
+	if err == sql.ErrNoRows {
+		return time.Time{}, nil
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	return parseTime(ts), nil
+}
+
+func (s *StateDB) SetLastStandupTime(t time.Time) error {
+	_, err := s.db.Exec(`INSERT INTO standup_meta (id, last_standup_at) VALUES (1, ?)
+		ON CONFLICT(id) DO UPDATE SET last_standup_at = ?`,
+		timeStr(t), timeStr(t))
 	return err
 }
 
