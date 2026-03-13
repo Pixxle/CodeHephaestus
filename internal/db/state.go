@@ -607,6 +607,24 @@ func (s *StateDB) GetSecurityFindingsWithoutJira(repoName string, minSeverity st
 	return scanSecurityFindings(rows)
 }
 
+// GetSecurityEpicKey returns the epic key for a repo's security findings, if one exists.
+func (s *StateDB) GetSecurityEpicKey(repoName string) (string, error) {
+	var key string
+	err := s.db.QueryRow(`SELECT epic_key FROM security_epics WHERE repo_name = ?`, repoName).Scan(&key)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return key, err
+}
+
+// SetSecurityEpicKey stores the epic key for a repo's security findings.
+func (s *StateDB) SetSecurityEpicKey(repoName, epicKey string) error {
+	_, err := s.db.Exec(`INSERT INTO security_epics (repo_name, epic_key) VALUES (?, ?)
+		ON CONFLICT(repo_name) DO UPDATE SET epic_key = ?`,
+		repoName, epicKey, epicKey)
+	return err
+}
+
 func scanSecurityFindings(rows *sql.Rows) ([]*SecurityFinding, error) {
 	var result []*SecurityFinding
 	for rows.Next() {

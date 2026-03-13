@@ -520,11 +520,19 @@ func (j *JiraTracker) ClearReadySignal(ctx context.Context, issueKey string) err
 }
 
 func (j *JiraTracker) CreateIssue(ctx context.Context, title, description string, labels []string) (string, error) {
+	return j.createIssueWithType(ctx, title, description, labels, "Task")
+}
+
+func (j *JiraTracker) CreateEpic(ctx context.Context, title, description string, labels []string) (string, error) {
+	return j.createIssueWithType(ctx, title, description, labels, "Epic")
+}
+
+func (j *JiraTracker) createIssueWithType(ctx context.Context, title, description string, labels []string, issueType string) (string, error) {
 	payload := map[string]interface{}{
 		"fields": map[string]interface{}{
 			"project":     map[string]string{"key": j.project},
 			"summary":     title,
-			"issuetype":   map[string]string{"name": "Task"},
+			"issuetype":   map[string]string{"name": issueType},
 			"description": textToADF(description),
 			"labels":      labels,
 		},
@@ -542,15 +550,39 @@ func (j *JiraTracker) CreateIssue(ctx context.Context, title, description string
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("creating issue failed (status %d): %s", resp.StatusCode, string(respBody))
+		return "", fmt.Errorf("creating %s failed (status %d): %s", strings.ToLower(issueType), resp.StatusCode, string(respBody))
 	}
 	var result struct {
 		Key string `json:"key"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decoding create issue response: %w", err)
+		return "", fmt.Errorf("decoding create %s response: %w", strings.ToLower(issueType), err)
 	}
 	return result.Key, nil
+}
+
+func (j *JiraTracker) LinkIssueToEpic(ctx context.Context, issueKey, epicKey string) error {
+	body := map[string]interface{}{
+		"fields": map[string]interface{}{
+			"parent": map[string]string{"key": epicKey},
+		},
+	}
+	b, _ := json.Marshal(body)
+	req, err := j.newRequest(ctx, "PUT", fmt.Sprintf("/rest/api/3/issue/%s", issueKey), bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := j.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("linking issue to epic failed (status %d): %s", resp.StatusCode, string(respBody))
+	}
+	return nil
 }
 
 func (j *JiraTracker) newRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {

@@ -276,6 +276,11 @@ func (p *SecurityEngineerPlugin) runFullScan(ctx context.Context, repoName, repo
 	if findingsForJira, jiraErr := p.libs.DB.GetSecurityFindingsWithoutJira(repoName, jiraThreshold); jiraErr != nil {
 		log.Warn().Err(jiraErr).Msg("failed to get findings for Jira")
 	} else if len(findingsForJira) > 0 {
+		epicKey, err := p.resolveSecurityEpic(ctx, repoName)
+		if err != nil {
+			log.Warn().Err(err).Str("repo", repoName).Msg("failed to resolve security epic, creating tickets without epic")
+		}
+
 		for _, f := range findingsForJira {
 			title := fmt.Sprintf("[Security] %s: %s", f.Severity, f.Title)
 			body := fmt.Sprintf("**Severity:** %s\n**Category:** %s\n**File:** %s (lines %d-%d)\n**CWE:** %s\n**OWASP:** %s\n\n%s\n\n**Remediation:**\n%s",
@@ -287,14 +292,45 @@ func (p *SecurityEngineerPlugin) runFullScan(ctx context.Context, repoName, repo
 				log.Warn().Err(err).Str("finding", f.Title).Msg("failed to create Jira ticket for security finding")
 				continue
 			}
+			if epicKey != "" {
+				if err := p.libs.Tracker.LinkIssueToEpic(ctx, issueKey, epicKey); err != nil {
+					log.Warn().Err(err).Str("issue", issueKey).Str("epic", epicKey).Msg("failed to link issue to security epic")
+				}
+			}
 			if err := p.libs.DB.UpdateSecurityFindingJiraKey(f.ID, issueKey); err != nil {
 				log.Warn().Err(err).Str("issue", issueKey).Msg("failed to update finding with Jira key")
 			}
-			log.Info().Str("issue", issueKey).Str("finding", f.Title).Msg("created Jira ticket for security finding")
+			log.Info().Str("issue", issueKey).Str("finding", f.Title).Str("epic", epicKey).Msg("created Jira ticket for security finding")
 		}
 	}
 
 	return nil
+}
+
+// resolveSecurityEpic returns the epic key for a repo's security findings.
+// If one already exists in the DB it is reused; otherwise a new epic is created.
+func (p *SecurityEngineerPlugin) resolveSecurityEpic(ctx context.Context, repoName string) (string, error) {
+	epicKey, err := p.libs.DB.GetSecurityEpicKey(repoName)
+	if err != nil {
+		return "", fmt.Errorf("get security epic key: %w", err)
+	}
+	if epicKey != "" {
+		return epicKey, nil
+	}
+
+	title := fmt.Sprintf("[Security] %s — Security Findings", repoName)
+	description := fmt.Sprintf("Security findings for repository %s, created by %s.", repoName, p.libs.Config.BotDisplayName)
+	epicKey, err = p.libs.Tracker.CreateEpic(ctx, title, description, []string{"security"})
+	if err != nil {
+		return "", fmt.Errorf("create security epic: %w", err)
+	}
+
+	if err := p.libs.DB.SetSecurityEpicKey(repoName, epicKey); err != nil {
+		return epicKey, fmt.Errorf("persist security epic key: %w", err)
+	}
+
+	log.Info().Str("repo", repoName).Str("epic", epicKey).Msg("created security epic")
+	return epicKey, nil
 }
 
 // syncJiraForMitigated transitions resolved findings' Jira tickets to Done.

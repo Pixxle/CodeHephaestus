@@ -27,6 +27,8 @@ type TaskTracker interface {
 	ClearReadySignal(ctx context.Context, issueKey string) error
 	ReadySignalInstruction() string
 	CreateIssue(ctx context.Context, title, description string, labels []string) (string, error)
+	CreateEpic(ctx context.Context, title, description string, labels []string) (string, error)
+	LinkIssueToEpic(ctx context.Context, issueKey, epicKey string) error
 }
 
 func NewTracker(cfg *config.Config) (TaskTracker, error) {

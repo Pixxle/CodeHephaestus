@@ -122,15 +122,15 @@ func main() {
 		GHUsername: ghUsername,
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Standup runner (optional).
 	if cfg.SlackStandupEnabled && slackClient != nil {
 		standup := slack.NewStandupRunner(cfg, stateDB, slackClient)
-		go standup.Run(context.Background())
+		go standup.Run(ctx)
 		log.Info().Int("hour", cfg.SlackStandupHour).Msg("standup runner started")
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	// Instantiate and start plugins.
 	var plugins []plugin.Plugin

@@ -1,6 +1,6 @@
 package db
 
-const schemaVersion = 8
+const schemaVersion = 9
 
 var migrations = [][]string{
 	// v1: Initial schema - each statement separate for SQLite compatibility
@@ -144,6 +144,13 @@ var migrations = [][]string{
 		`CREATE TABLE IF NOT EXISTS standup_meta (
 			id INTEGER PRIMARY KEY CHECK (id = 1),
 			last_standup_at TEXT NOT NULL
+		)`,
+	},
+	// v9: Security epics — track epic per repo for grouping security findings
+	{
+		`CREATE TABLE IF NOT EXISTS security_epics (
+			repo_name TEXT PRIMARY KEY,
+			epic_key TEXT NOT NULL
 		)`,
 	},
 }
