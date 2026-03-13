@@ -349,3 +349,274 @@ func nullTimeStr(t *time.Time) interface{} {
 	}
 	return timeStr(*t)
 }
+
+// Security scan and finding types
+
+type SecurityScan struct {
+	ID            int64
+	RepoName      string
+	ScanType      string
+	Status        string
+	CommitHash    string
+	FindingsCount int
+	Summary       string
+	StartedAt     *time.Time
+	CompletedAt   *time.Time
+	CreatedAt     time.Time
+}
+
+type SecurityFinding struct {
+	ID                int64
+	RepoName          string
+	ScanID            int64
+	Agent             string
+	FindingID         string
+	Title             string
+	Description       string
+	Severity          string
+	Confidence        string
+	Priority          string
+	Category          string
+	CweID             string
+	OwaspCategory     string
+	FilePath          string
+	LineStart         int
+	LineEnd           int
+	Snippet           string
+	Evidence          string
+	Source            string
+	SourceTool        string
+	Remediation       string
+	RemediationEffort string
+	CodeSuggestion    string
+	FalsePositiveRisk string
+	Status            string
+	Fingerprint       string
+	FirstSeenScanID   int64
+	LastSeenScanID    int64
+	JiraIssueKey      string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+// Security scan operations
+
+// CreateSecurityScan inserts a new scan record and sets the ID on the passed struct.
+func (s *StateDB) CreateSecurityScan(scan *SecurityScan) error {
+	now := timeStr(time.Now().UTC())
+	res, err := s.db.Exec(`INSERT INTO security_scans
+		(repo_name, scan_type, status, commit_hash, findings_count, summary, started_at, completed_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		scan.RepoName, scan.ScanType, scan.Status, scan.CommitHash,
+		scan.FindingsCount, scan.Summary,
+		nullTimeStr(scan.StartedAt), nullTimeStr(scan.CompletedAt), now)
+	if err != nil {
+		return err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return err
+	}
+	scan.ID = id
+	scan.CreatedAt = parseTime(now)
+	return nil
+}
+
+// UpdateSecurityScanStatus updates scan status, summary, and completed_at timestamp.
+func (s *StateDB) UpdateSecurityScanStatus(id int64, status string, summary string) error {
+	now := timeStr(time.Now().UTC())
+	_, err := s.db.Exec(`UPDATE security_scans SET status = ?, summary = ?, completed_at = ? WHERE id = ?`,
+		status, summary, now, id)
+	return err
+}
+
+// UpsertSecurityFinding creates or updates a finding by repo_name+fingerprint.
+func (s *StateDB) UpsertSecurityFinding(f *SecurityFinding) error {
+	now := timeStr(time.Now().UTC())
+	res, err := s.db.Exec(`INSERT INTO security_findings
+		(repo_name, scan_id, agent, finding_id, title, description, severity, confidence,
+		priority, category, cwe_id, owasp_category, file_path, line_start, line_end,
+		snippet, evidence, source, source_tool, remediation, remediation_effort,
+		code_suggestion, false_positive_risk, status, fingerprint,
+		first_seen_scan_id, last_seen_scan_id, jira_issue_key, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(repo_name, fingerprint) DO UPDATE SET
+			scan_id = excluded.scan_id,
+			agent = excluded.agent,
+			finding_id = excluded.finding_id,
+			title = excluded.title,
+			description = excluded.description,
+			severity = excluded.severity,
+			confidence = excluded.confidence,
+			priority = excluded.priority,
+			category = excluded.category,
+			cwe_id = excluded.cwe_id,
+			owasp_category = excluded.owasp_category,
+			file_path = excluded.file_path,
+			line_start = excluded.line_start,
+			line_end = excluded.line_end,
+			snippet = excluded.snippet,
+			evidence = excluded.evidence,
+			source = excluded.source,
+			source_tool = excluded.source_tool,
+			remediation = excluded.remediation,
+			remediation_effort = excluded.remediation_effort,
+			code_suggestion = excluded.code_suggestion,
+			false_positive_risk = excluded.false_positive_risk,
+			status = excluded.status,
+			last_seen_scan_id = excluded.last_seen_scan_id,
+			updated_at = excluded.updated_at`,
+		f.RepoName, f.ScanID, f.Agent, f.FindingID, f.Title, f.Description,
+		f.Severity, f.Confidence, f.Priority, f.Category, f.CweID, f.OwaspCategory,
+		f.FilePath, f.LineStart, f.LineEnd, f.Snippet, f.Evidence, f.Source,
+		f.SourceTool, f.Remediation, f.RemediationEffort, f.CodeSuggestion,
+		f.FalsePositiveRisk, f.Status, f.Fingerprint,
+		f.FirstSeenScanID, f.LastSeenScanID, f.JiraIssueKey, now, now)
+	if err != nil {
+		return err
+	}
+	if f.ID == 0 {
+		id, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+		f.ID = id
+	}
+	return nil
+}
+
+// GetOpenSecurityFindings returns all open findings for a repo.
+func (s *StateDB) GetOpenSecurityFindings(repoName string) ([]*SecurityFinding, error) {
+	rows, err := s.db.Query(`SELECT id, repo_name, scan_id, agent, finding_id, title, description,
+		severity, confidence, priority, category, cwe_id, owasp_category,
+		file_path, line_start, line_end, snippet, evidence, source, source_tool,
+		remediation, remediation_effort, code_suggestion, false_positive_risk,
+		status, fingerprint, first_seen_scan_id, last_seen_scan_id, jira_issue_key,
+		created_at, updated_at
+		FROM security_findings WHERE repo_name = ? AND status = 'open'`, repoName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanSecurityFindings(rows)
+}
+
+// MarkSecurityFindingMitigated marks a finding as mitigated.
+func (s *StateDB) MarkSecurityFindingMitigated(id int64, scanID int64) error {
+	now := timeStr(time.Now().UTC())
+	_, err := s.db.Exec(`UPDATE security_findings SET status = 'mitigated', last_seen_scan_id = ?, updated_at = ? WHERE id = ?`,
+		scanID, now, id)
+	return err
+}
+
+// UpdateSecurityFindingJiraKey sets the Jira issue key on a finding.
+func (s *StateDB) UpdateSecurityFindingJiraKey(id int64, jiraKey string) error {
+	now := timeStr(time.Now().UTC())
+	_, err := s.db.Exec(`UPDATE security_findings SET jira_issue_key = ?, updated_at = ? WHERE id = ?`,
+		jiraKey, now, id)
+	return err
+}
+
+// GetSecurityFindingsWithoutJira returns open findings above a severity threshold that lack Jira tickets.
+// minSeverity should be one of: critical, high, medium, low, info.
+func (s *StateDB) GetSecurityFindingsWithoutJira(repoName string, minSeverity string) ([]*SecurityFinding, error) {
+	severityOrder := map[string]int{
+		"critical": 5,
+		"high":     4,
+		"medium":   3,
+		"low":      2,
+		"info":     1,
+	}
+	minLevel := severityOrder[minSeverity]
+
+	var allowed []string
+	for sev, level := range severityOrder {
+		if level >= minLevel {
+			allowed = append(allowed, sev)
+		}
+	}
+	if len(allowed) == 0 {
+		return nil, nil
+	}
+
+	// Build placeholders
+	query := `SELECT id, repo_name, scan_id, agent, finding_id, title, description,
+		severity, confidence, priority, category, cwe_id, owasp_category,
+		file_path, line_start, line_end, snippet, evidence, source, source_tool,
+		remediation, remediation_effort, code_suggestion, false_positive_risk,
+		status, fingerprint, first_seen_scan_id, last_seen_scan_id, jira_issue_key,
+		created_at, updated_at
+		FROM security_findings
+		WHERE repo_name = ? AND status = 'open' AND (jira_issue_key IS NULL OR jira_issue_key = '') AND severity IN (`
+	args := []interface{}{repoName}
+	for i, sev := range allowed {
+		if i > 0 {
+			query += ", "
+		}
+		query += "?"
+		args = append(args, sev)
+	}
+	query += ")"
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanSecurityFindings(rows)
+}
+
+func scanSecurityFindings(rows *sql.Rows) ([]*SecurityFinding, error) {
+	var result []*SecurityFinding
+	for rows.Next() {
+		f := &SecurityFinding{}
+		var findingID, description, confidence, priority, category sql.NullString
+		var cweID, owaspCategory, filePath, snippet, evidence sql.NullString
+		var source, sourceTool, remediation, remediationEffort sql.NullString
+		var codeSuggestion, falsePositiveRisk, jiraIssueKey sql.NullString
+		var lineStart, lineEnd sql.NullInt64
+		var firstSeenScanID, lastSeenScanID sql.NullInt64
+		var createdAt, updatedAt sql.NullString
+
+		if err := rows.Scan(&f.ID, &f.RepoName, &f.ScanID, &f.Agent, &findingID,
+			&f.Title, &description, &f.Severity, &confidence, &priority,
+			&category, &cweID, &owaspCategory, &filePath, &lineStart, &lineEnd,
+			&snippet, &evidence, &source, &sourceTool, &remediation,
+			&remediationEffort, &codeSuggestion, &falsePositiveRisk,
+			&f.Status, &f.Fingerprint, &firstSeenScanID, &lastSeenScanID,
+			&jiraIssueKey, &createdAt, &updatedAt); err != nil {
+			return nil, err
+		}
+
+		f.FindingID = findingID.String
+		f.Description = description.String
+		f.Confidence = confidence.String
+		f.Priority = priority.String
+		f.Category = category.String
+		f.CweID = cweID.String
+		f.OwaspCategory = owaspCategory.String
+		f.FilePath = filePath.String
+		f.LineStart = int(lineStart.Int64)
+		f.LineEnd = int(lineEnd.Int64)
+		f.Snippet = snippet.String
+		f.Evidence = evidence.String
+		f.Source = source.String
+		f.SourceTool = sourceTool.String
+		f.Remediation = remediation.String
+		f.RemediationEffort = remediationEffort.String
+		f.CodeSuggestion = codeSuggestion.String
+		f.FalsePositiveRisk = falsePositiveRisk.String
+		f.FirstSeenScanID = firstSeenScanID.Int64
+		f.LastSeenScanID = lastSeenScanID.Int64
+		f.JiraIssueKey = jiraIssueKey.String
+		if createdAt.Valid {
+			f.CreatedAt = parseTime(createdAt.String)
+		}
+		if updatedAt.Valid {
+			f.UpdatedAt = parseTime(updatedAt.String)
+		}
+
+		result = append(result, f)
+	}
+	return result, rows.Err()
+}
