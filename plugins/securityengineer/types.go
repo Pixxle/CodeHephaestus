@@ -119,10 +119,10 @@ type ConsolidateInput struct {
 
 // PipelineResult is the output of a full pipeline run.
 type PipelineResult struct {
-	ToolResults  []ToolResult              `json:"tool_results"`
-	AgentResults map[string][]*RawFinding  `json:"agent_results"`
-	Consolidated []*RawFinding             `json:"consolidated"`
-	Summary      string                    `json:"summary"`
+	ToolResults  []ToolResult             `json:"tool_results"`
+	AgentResults map[string][]*RawFinding `json:"agent_results"`
+	Consolidated []*RawFinding            `json:"consolidated"`
+	Summary      string                   `json:"summary"`
 }
 
 // Priority computes priority from severity x confidence.

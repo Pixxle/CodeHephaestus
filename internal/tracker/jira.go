@@ -522,9 +522,9 @@ func (j *JiraTracker) ClearReadySignal(ctx context.Context, issueKey string) err
 func (j *JiraTracker) CreateIssue(ctx context.Context, title, description string, labels []string) (string, error) {
 	payload := map[string]interface{}{
 		"fields": map[string]interface{}{
-			"project":   map[string]string{"key": j.project},
-			"summary":   title,
-			"issuetype": map[string]string{"name": "Task"},
+			"project":     map[string]string{"key": j.project},
+			"summary":     title,
+			"issuetype":   map[string]string{"name": "Task"},
 			"description": textToADF(description),
 			"labels":      labels,
 		},

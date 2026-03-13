@@ -30,14 +30,14 @@ type Plugin interface {
 
 // SharedLibs holds references to shared infrastructure that plugins can use.
 type SharedLibs struct {
-	Config    *config.Config
-	DB        *db.StateDB
-	Tracker   tracker.TaskTracker
-	GitHub    map[string]*ghclient.Client // keyed by repo name
-	Notifier  slack.Notifier
-	Figma     *figma.Client
-	Logger    zerolog.Logger
-	BotUserID string
+	Config     *config.Config
+	DB         *db.StateDB
+	Tracker    tracker.TaskTracker
+	GitHub     map[string]*ghclient.Client // keyed by repo name
+	Notifier   slack.Notifier
+	Figma      *figma.Client
+	Logger     zerolog.Logger
+	BotUserID  string
 	GHUsername string
 }
 

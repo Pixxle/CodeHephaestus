@@ -472,11 +472,12 @@ func (h *Handlers) recordFeedback(issueKey string, prNumber int, comment ghclien
 }
 
 func classifyComment(ctx context.Context, body, model string) string {
-	prompt := fmt.Sprintf(`Classify this PR review comment. Is it requesting code changes, or asking a question?
-
-Comment: %q
-
-Respond with ONLY a JSON object: {"type": "code_change"} or {"type": "question"}`, body)
+	prompt, err := claude.RenderPrompt("classify_comment.md.tmpl", map[string]interface{}{
+		"Comment": body,
+	})
+	if err != nil {
+		return "code_change"
+	}
 
 	output, err := claude.RunClaudeQuick(ctx, prompt, model)
 	if err != nil {
@@ -493,11 +494,12 @@ Respond with ONLY a JSON object: {"type": "code_change"} or {"type": "question"}
 }
 
 func classifyIsQuestion(ctx context.Context, body, model string) bool {
-	prompt := fmt.Sprintf(`Is this PR comment asking a question that needs answering? Direct questions, requests for explanation = yes. Praise, acknowledgments, automated summaries, informational statements = no.
-
-Comment: %q
-
-Respond with ONLY a JSON object: {"is_question": true} or {"is_question": false}`, body)
+	prompt, err := claude.RenderPrompt("classify_question.md.tmpl", map[string]interface{}{
+		"Comment": body,
+	})
+	if err != nil {
+		return false
+	}
 
 	output, err := claude.RunClaudeQuick(ctx, prompt, model)
 	if err != nil {

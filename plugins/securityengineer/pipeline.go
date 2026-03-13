@@ -137,11 +137,14 @@ func (p *Pipeline) runAgent(ctx context.Context, agentName string, toolResults [
 	// Save rendered prompt for audit
 	SavePromptToFile(p.OutputDir, agentName, prompt)
 
-	systemPrompt := fmt.Sprintf("You are the %s security analysis agent. "+
-		"Analyze the provided tool outputs and source code, then return findings as a JSON array. "+
-		"Be thorough but filter obvious false positives. Return ONLY valid JSON.", agentName)
+	systemPrompt, err := claude.RenderPrompt("security/agent_system.md.tmpl", map[string]interface{}{
+		"AgentName": agentName,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("render system prompt: %w", err)
+	}
 
-	fullPrompt := systemPrompt + "\n\n" + prompt
+	fullPrompt := systemPrompt + "\n" + prompt
 
 	result, err := claude.RunClaude(ctx, fullPrompt, ".", p.Model)
 	if err != nil {
@@ -181,11 +184,12 @@ func (p *Pipeline) consolidate(ctx context.Context, agentResults map[string][]*R
 
 	SavePromptToFile(p.OutputDir, "consolidate", prompt)
 
-	systemPrompt := "You are the consolidation agent. " +
-		"Deduplicate, cross-correlate, and identify compound findings across all agent results. " +
-		"Return ONLY valid JSON."
+	systemPrompt, err := claude.RenderPrompt("security/consolidate_system.md.tmpl", nil)
+	if err != nil {
+		return nil, fmt.Errorf("render consolidation system prompt: %w", err)
+	}
 
-	fullPrompt := systemPrompt + "\n\n" + prompt
+	fullPrompt := systemPrompt + "\n" + prompt
 
 	result, err := claude.RunClaude(ctx, fullPrompt, ".", p.Model)
 	if err != nil {

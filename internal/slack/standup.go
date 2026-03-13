@@ -8,9 +8,9 @@ import (
 	"github.com/rs/zerolog/log"
 	slackapi "github.com/slack-go/slack"
 
+	"github.com/pixxle/solomon/internal/claude"
 	"github.com/pixxle/solomon/internal/config"
 	"github.com/pixxle/solomon/internal/db"
-	"github.com/pixxle/solomon/internal/claude"
 )
 
 // standupItem is the JSON shape passed to the standup prompt template.

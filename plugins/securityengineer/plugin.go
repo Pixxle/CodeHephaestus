@@ -279,4 +279,3 @@ func (p *SecurityEngineerPlugin) runFullScan(ctx context.Context, repoName, repo
 
 	return nil
 }
-

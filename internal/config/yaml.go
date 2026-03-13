@@ -48,8 +48,8 @@ type SlackYAMLConfig struct {
 
 // FigmaYAMLConfig holds Figma integration settings.
 type FigmaYAMLConfig struct {
-	AccessToken string `yaml:"access_token"`
-	ExportScale int    `yaml:"export_scale"`
+	AccessToken  string `yaml:"access_token"`
+	ExportScale  int    `yaml:"export_scale"`
 	ExportFormat string `yaml:"export_format"`
 }
 
@@ -297,10 +297,10 @@ func GenerateFromEnv(cfg *Config) *YAMLConfig {
 					},
 				},
 				Settings: map[string]interface{}{
-					"auto_launch":        cfg.AutoLaunchImplementation,
-					"max_review_rounds":  cfg.MaxReviewRounds,
+					"auto_launch":         cfg.AutoLaunchImplementation,
+					"max_review_rounds":   cfg.MaxReviewRounds,
 					"max_ci_fix_attempts": cfg.MaxCIFixAttempts,
-					"max_uat_retries":    cfg.MaxUATRetries,
+					"max_uat_retries":     cfg.MaxUATRetries,
 				},
 			},
 		},
