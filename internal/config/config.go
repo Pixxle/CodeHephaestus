@@ -158,7 +158,11 @@ func Load(envPath string) (*Config, error) {
 	}
 
 	if cfg.StateDBPath == "" {
-		cfg.StateDBPath = cfg.TargetRepoPath + "/.solomon/state.db"
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("resolving home directory: %w", err)
+		}
+		cfg.StateDBPath = home + "/.solomon/state.db"
 	}
 
 	if err := cfg.validate(); err != nil {

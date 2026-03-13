@@ -168,7 +168,11 @@ func (y *YAMLConfig) ToConfig() (*Config, error) {
 
 	stateDBPath := y.Global.StateDBPath
 	if stateDBPath == "" {
-		stateDBPath = targetRepoPath + "/.solomon/state.db"
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("resolving home directory: %w", err)
+		}
+		stateDBPath = home + "/.solomon/state.db"
 	}
 	worktreePath := targetRepoPath + "/.worktrees"
 
