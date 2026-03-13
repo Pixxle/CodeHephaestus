@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/pixxle/solomon/internal/claude"
@@ -66,7 +67,7 @@ func BuildAgentInput(agentName string, toolResults []ToolResult, sourceFiles []S
 
 // ParseAgentResponse parses the JSON findings array from an LLM response.
 func ParseAgentResponse(agentName string, response string) ([]*RawFinding, error) {
-	response = extractJSON(response)
+	response = sanitizeJSON(extractJSON(response))
 	var findings []*RawFinding
 	if err := json.Unmarshal([]byte(response), &findings); err != nil {
 		var single RawFinding
@@ -140,6 +141,14 @@ func extractJSON(s string) string {
 		return s
 	}
 	return s[start : end+1]
+}
+
+// trailingCommaRe matches trailing commas before closing braces/brackets.
+var trailingCommaRe = regexp.MustCompile(`,\s*([}\]])`)
+
+// sanitizeJSON fixes common LLM JSON issues like trailing commas.
+func sanitizeJSON(s string) string {
+	return trailingCommaRe.ReplaceAllString(s, "$1")
 }
 
 // collectSourceFiles gathers relevant source files from the target path.
