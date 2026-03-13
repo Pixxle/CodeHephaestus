@@ -21,8 +21,8 @@ type SlackNotifier struct {
 	threads map[string]string // in-memory cache: issueKey → threadTS
 }
 
-// newSlackNotifier creates a SlackNotifier with a shared Slack client.
-func newSlackNotifier(client *slackapi.Client, channelID string, stateDB *db.StateDB) *SlackNotifier {
+// NewSlackNotifier creates a SlackNotifier with a shared Slack client.
+func NewSlackNotifier(client *slackapi.Client, channelID string, stateDB *db.StateDB) *SlackNotifier {
 	return &SlackNotifier{
 		client:    client,
 		channelID: channelID,

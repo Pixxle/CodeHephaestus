@@ -16,10 +16,7 @@ global:
 
   slack:
     bot_token: ${SLACK_BOT_TOKEN}
-    channel_id: ${SLACK_CHANNEL_ID}
-    standup_enabled: false
-    standup_hour: 9              # UTC hour for daily standup post
-    standup_channel_id: ""       # defaults to channel_id if empty
+    channel_id: ${SLACK_CHANNEL_ID}   # default channel for all plugins
 
   figma:
     access_token: ${FIGMA_ACCESS_TOKEN}
@@ -69,6 +66,10 @@ plugins:
       max_review_rounds: 3
       max_ci_fix_attempts: 3
       max_uat_retries: 2
+      slack_channel_id: ""       # plugin-specific channel (falls back to global)
+      standup_enabled: false
+      standup_hour: 9            # UTC hour for daily standup post
+      standup_channel_id: ""     # defaults to slack_channel_id / global channel_id
 
   # Security engineer plugin — runs automated security audits
   - type: securityengineer
@@ -83,3 +84,4 @@ plugins:
     settings:
       parallel_agents: 4         # number of concurrent security agents
       jira_threshold: HIGH       # create Jira tickets for findings at this severity and above (CRITICAL, HIGH, MEDIUM, LOW)
+      slack_channel_id: ""       # plugin-specific channel (falls back to global)

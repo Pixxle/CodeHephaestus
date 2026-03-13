@@ -2,11 +2,6 @@ package slack
 
 import (
 	"context"
-
-	slackapi "github.com/slack-go/slack"
-
-	"github.com/pixxle/solomon/internal/config"
-	"github.com/pixxle/solomon/internal/db"
 )
 
 // Notifier sends lifecycle notifications for ticket processing.
@@ -45,15 +40,4 @@ func (n *NoopNotifier) NotifyJailbreakDetected(context.Context, string, string, 
 }
 func (n *NoopNotifier) NotifySecurityScanComplete(context.Context, string, int, int, int) error {
 	return nil
-}
-
-// NewNotifier returns a SlackNotifier when Slack is configured and not in dry-run mode,
-// or a NoopNotifier otherwise. The returned slackClient can be passed to NewStandupRunner
-// to share the same HTTP connection pool; it is nil when Slack is disabled.
-func NewNotifier(cfg *config.Config, stateDB *db.StateDB) (Notifier, *slackapi.Client) {
-	if cfg.SlackEnabled() && !cfg.DryRun {
-		client := slackapi.New(cfg.SlackBotToken)
-		return newSlackNotifier(client, cfg.SlackChannelID, stateDB), client
-	}
-	return &NoopNotifier{}, nil
 }

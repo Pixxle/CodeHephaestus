@@ -39,11 +39,8 @@ type ClaudeYAMLConfig struct {
 
 // SlackYAMLConfig holds Slack integration settings.
 type SlackYAMLConfig struct {
-	BotToken         string `yaml:"bot_token"`
-	ChannelID        string `yaml:"channel_id"`
-	StandupEnabled   bool   `yaml:"standup_enabled"`
-	StandupHour      int    `yaml:"standup_hour"`
-	StandupChannelID string `yaml:"standup_channel_id"`
+	BotToken  string `yaml:"bot_token"`
+	ChannelID string `yaml:"channel_id"`
 }
 
 // FigmaYAMLConfig holds Figma integration settings.
@@ -204,11 +201,8 @@ func (y *YAMLConfig) ToConfig() (*Config, error) {
 		FigmaExportScale:  orDefaultInt(y.Global.Figma.ExportScale, 2),
 		FigmaExportFormat: orDefault(y.Global.Figma.ExportFormat, "png"),
 
-		SlackBotToken:         y.Global.Slack.BotToken,
-		SlackChannelID:        y.Global.Slack.ChannelID,
-		SlackStandupEnabled:   y.Global.Slack.StandupEnabled,
-		SlackStandupHour:      orDefaultInt(y.Global.Slack.StandupHour, 9),
-		SlackStandupChannelID: y.Global.Slack.StandupChannelID,
+		SlackBotToken:  y.Global.Slack.BotToken,
+		SlackChannelID: y.Global.Slack.ChannelID,
 
 		AgentTeamTimeout: orDefaultInt(y.Global.Claude.AgentTeamTimeout, 3600),
 
@@ -243,11 +237,8 @@ func GenerateFromEnv(cfg *Config) *YAMLConfig {
 				AgentTeamTimeout: cfg.AgentTeamTimeout,
 			},
 			Slack: SlackYAMLConfig{
-				BotToken:         cfg.SlackBotToken,
-				ChannelID:        cfg.SlackChannelID,
-				StandupEnabled:   cfg.SlackStandupEnabled,
-				StandupHour:      cfg.SlackStandupHour,
-				StandupChannelID: cfg.SlackStandupChannelID,
+				BotToken:  cfg.SlackBotToken,
+				ChannelID: cfg.SlackChannelID,
 			},
 			Figma: FigmaYAMLConfig{
 				AccessToken:  cfg.FigmaAccessToken,

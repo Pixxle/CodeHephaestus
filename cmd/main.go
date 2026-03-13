@@ -12,12 +12,13 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	slackapi "github.com/slack-go/slack"
+
 	"github.com/pixxle/solomon/internal/config"
 	"github.com/pixxle/solomon/internal/db"
 	"github.com/pixxle/solomon/internal/figma"
 	ghclient "github.com/pixxle/solomon/internal/github"
 	"github.com/pixxle/solomon/internal/plugin"
-	"github.com/pixxle/solomon/internal/slack"
 	"github.com/pixxle/solomon/internal/tracker"
 
 	// Register plugins via init().
@@ -78,8 +79,11 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to create tracker")
 	}
 
-	// Slack notifier.
-	notifier, slackClient := slack.NewNotifier(cfg, stateDB)
+	// Slack client (shared across plugins; each plugin creates its own notifier).
+	var slackClient *slackapi.Client
+	if cfg.SlackEnabled() && !cfg.DryRun {
+		slackClient = slackapi.New(cfg.SlackBotToken)
+	}
 
 	// Figma client (optional).
 	var figmaClient *figma.Client
@@ -111,26 +115,19 @@ func main() {
 
 	// Shared libraries for plugins.
 	libs := &plugin.SharedLibs{
-		Config:     cfg,
-		DB:         stateDB,
-		Tracker:    trk,
-		GitHub:     ghClients,
-		Notifier:   notifier,
-		Figma:      figmaClient,
-		Logger:     log.Logger,
-		BotUserID:  botUserID,
-		GHUsername: ghUsername,
+		Config:      cfg,
+		DB:          stateDB,
+		Tracker:     trk,
+		GitHub:      ghClients,
+		SlackClient: slackClient,
+		Figma:       figmaClient,
+		Logger:      log.Logger,
+		BotUserID:   botUserID,
+		GHUsername:  ghUsername,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	// Standup runner (optional).
-	if cfg.SlackStandupEnabled && slackClient != nil {
-		standup := slack.NewStandupRunner(cfg, stateDB, slackClient)
-		go standup.Run(ctx)
-		log.Info().Int("hour", cfg.SlackStandupHour).Msg("standup runner started")
-	}
 
 	// Instantiate and start plugins.
 	var plugins []plugin.Plugin

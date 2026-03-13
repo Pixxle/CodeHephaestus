@@ -8,6 +8,8 @@ import (
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog/log"
 
+	slackapi "github.com/slack-go/slack"
+
 	"github.com/pixxle/solomon/internal/config"
 	"github.com/pixxle/solomon/internal/db"
 	"github.com/pixxle/solomon/internal/figma"
@@ -27,15 +29,16 @@ func init() {
 // DeveloperPlugin implements the ticket-implementation workflow:
 // planning → coding → PR → review → merge.
 type DeveloperPlugin struct {
-	pluginCfg  plugin.PluginConfig
-	cfg        *config.Config
-	stateDB    *db.StateDB
-	tracker    tracker.TaskTracker
-	github     *ghclient.Client
-	notifier   slack.Notifier
-	figma      *figma.Client
-	botUserID  string
-	ghUsername string
+	pluginCfg   plugin.PluginConfig
+	cfg         *config.Config
+	stateDB     *db.StateDB
+	tracker     tracker.TaskTracker
+	github      *ghclient.Client
+	notifier    slack.Notifier
+	figma       *figma.Client
+	slackClient *slackapi.Client
+	botUserID   string
+	ghUsername  string
 
 	machine    *Machine
 	loopPrev   *LoopPrevention
@@ -56,15 +59,16 @@ func NewDeveloperPlugin(pluginCfg plugin.PluginConfig, libs *plugin.SharedLibs) 
 	}
 
 	p := &DeveloperPlugin{
-		pluginCfg:  pluginCfg,
-		cfg:        libs.Config,
-		stateDB:    libs.DB,
-		tracker:    libs.Tracker,
-		github:     gh,
-		notifier:   libs.Notifier,
-		figma:      libs.Figma,
-		botUserID:  libs.BotUserID,
-		ghUsername: libs.GHUsername,
+		pluginCfg:   pluginCfg,
+		cfg:         libs.Config,
+		stateDB:     libs.DB,
+		tracker:     libs.Tracker,
+		github:      gh,
+		notifier:    plugin.NewNotifier(libs, pluginCfg.Settings),
+		figma:       libs.Figma,
+		slackClient: libs.SlackClient,
+		botUserID:   libs.BotUserID,
+		ghUsername:  libs.GHUsername,
 	}
 
 	p.loopPrev = NewLoopPrevention(p.stateDB)
@@ -78,6 +82,16 @@ func (p *DeveloperPlugin) Name() string { return "developer" }
 
 func (p *DeveloperPlugin) Start(ctx context.Context) error {
 	ctx, p.cancel = context.WithCancel(ctx)
+
+	// Start standup runner if enabled.
+	if plugin.SettingBool(p.pluginCfg.Settings, "standup_enabled") && p.slackClient != nil {
+		standupHour := plugin.SettingInt(p.pluginCfg.Settings, "standup_hour", 9)
+		standupChannelID := plugin.SettingString(p.pluginCfg.Settings, "standup_channel_id",
+			plugin.SettingString(p.pluginCfg.Settings, "slack_channel_id", p.cfg.SlackChannelID))
+		standup := slack.NewStandupRunner(p.cfg, p.stateDB, p.slackClient, standupHour, standupChannelID)
+		go standup.Run(ctx)
+		log.Info().Int("hour", standupHour).Msg("developer: standup runner started")
+	}
 
 	// --once mode: run a single iteration and return
 	if p.cfg.Once {

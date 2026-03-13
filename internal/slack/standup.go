@@ -27,23 +27,21 @@ type standupItem struct {
 type StandupRunner struct {
 	client       *slackapi.Client
 	channelID    string
+	standupHour  int
 	stateDB      *db.StateDB
 	cfg          *config.Config
 	lastPostedAt time.Time // persisted timestamp of the last standup for delta queries and dedup
 }
 
-// NewStandupRunner creates a StandupRunner that posts to the configured standup channel.
+// NewStandupRunner creates a StandupRunner that posts to the given channel at the given hour.
 // Accepts a shared Slack client to avoid duplicate HTTP connection pools.
-func NewStandupRunner(cfg *config.Config, stateDB *db.StateDB, client *slackapi.Client) *StandupRunner {
-	channelID := cfg.SlackStandupChannelID
-	if channelID == "" {
-		channelID = cfg.SlackChannelID
-	}
+func NewStandupRunner(cfg *config.Config, stateDB *db.StateDB, client *slackapi.Client, standupHour int, channelID string) *StandupRunner {
 	s := &StandupRunner{
-		client:    client,
-		channelID: channelID,
-		stateDB:   stateDB,
-		cfg:       cfg,
+		client:      client,
+		channelID:   channelID,
+		standupHour: standupHour,
+		stateDB:     stateDB,
+		cfg:         cfg,
 	}
 	// Restore last standup time from DB so delta works across restarts.
 	if t, err := stateDB.GetLastStandupTime(); err == nil && !t.IsZero() {
@@ -70,7 +68,7 @@ func (s *StandupRunner) Run(ctx context.Context) {
 func (s *StandupRunner) check(ctx context.Context) {
 	now := time.Now().UTC()
 
-	if now.Hour() != s.cfg.SlackStandupHour {
+	if now.Hour() != s.standupHour {
 		return
 	}
 	if !s.lastPostedAt.IsZero() && s.lastPostedAt.Format("2006-01-02") == now.Format("2006-01-02") {

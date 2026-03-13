@@ -5,11 +5,12 @@ import (
 
 	"github.com/rs/zerolog"
 
+	slackapi "github.com/slack-go/slack"
+
 	"github.com/pixxle/solomon/internal/config"
 	"github.com/pixxle/solomon/internal/db"
 	"github.com/pixxle/solomon/internal/figma"
 	ghclient "github.com/pixxle/solomon/internal/github"
-	"github.com/pixxle/solomon/internal/slack"
 	"github.com/pixxle/solomon/internal/tracker"
 )
 
@@ -30,15 +31,15 @@ type Plugin interface {
 
 // SharedLibs holds references to shared infrastructure that plugins can use.
 type SharedLibs struct {
-	Config     *config.Config
-	DB         *db.StateDB
-	Tracker    tracker.TaskTracker
-	GitHub     map[string]*ghclient.Client // keyed by repo name
-	Notifier   slack.Notifier
-	Figma      *figma.Client
-	Logger     zerolog.Logger
-	BotUserID  string
-	GHUsername string
+	Config      *config.Config
+	DB          *db.StateDB
+	Tracker     tracker.TaskTracker
+	GitHub      map[string]*ghclient.Client // keyed by repo name
+	SlackClient *slackapi.Client
+	Figma       *figma.Client
+	Logger      zerolog.Logger
+	BotUserID   string
+	GHUsername  string
 }
 
 // RepoRef describes a repository that a plugin targets, with an optional

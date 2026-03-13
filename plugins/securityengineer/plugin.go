@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog/log"
@@ -15,6 +16,7 @@ import (
 	"github.com/pixxle/solomon/internal/db"
 	"github.com/pixxle/solomon/internal/git"
 	"github.com/pixxle/solomon/internal/plugin"
+	"github.com/pixxle/solomon/internal/slack"
 )
 
 func init() {
@@ -27,6 +29,7 @@ func init() {
 type SecurityEngineerPlugin struct {
 	pluginCfg plugin.PluginConfig
 	libs      *plugin.SharedLibs
+	notifier  slack.Notifier
 	cron      *cron.Cron
 	mu        sync.Mutex
 	cancel    context.CancelFunc
@@ -37,6 +40,7 @@ func NewSecurityEngineerPlugin(cfg plugin.PluginConfig, libs *plugin.SharedLibs)
 	return &SecurityEngineerPlugin{
 		pluginCfg: cfg,
 		libs:      libs,
+		notifier:  plugin.NewNotifier(libs, cfg.Settings),
 	}, nil
 }
 
@@ -205,16 +209,15 @@ func (p *SecurityEngineerPlugin) runQuickScan(ctx context.Context, repoName, rep
 		Int("mitigated", mitigated).
 		Msg("quick scan complete")
 
+	if err := p.notifier.NotifySecurityScanComplete(ctx, repoName, 0, stillOpen, mitigated); err != nil {
+		log.Warn().Err(err).Msg("failed to send security scan Slack notification")
+	}
+
 	return nil
 }
 
 func (p *SecurityEngineerPlugin) runFullScan(ctx context.Context, repoName, repoPath string, scanID int64) error {
-	parallelAgents := 4
-	if v, ok := p.pluginCfg.Settings["parallel_agents"]; ok {
-		if n, ok := v.(float64); ok {
-			parallelAgents = int(n)
-		}
-	}
+	parallelAgents := plugin.SettingInt(p.pluginCfg.Settings, "parallel_agents", 4)
 
 	model := p.libs.Config.PlanningModel
 	if model == "" {
@@ -259,19 +262,12 @@ func (p *SecurityEngineerPlugin) runFullScan(ctx context.Context, repoName, repo
 		Int("mitigated", persistResult.MitigatedCount).
 		Msg("full scan complete")
 
-	if persistResult.NewCount > 0 || persistResult.MitigatedCount > 0 {
-		if err := p.libs.Notifier.NotifySecurityScanComplete(ctx, repoName, persistResult.NewCount, persistResult.OpenCount, persistResult.MitigatedCount); err != nil {
-			log.Warn().Err(err).Msg("failed to send security scan Slack notification")
-		}
+	if err := p.notifier.NotifySecurityScanComplete(ctx, repoName, persistResult.NewCount, persistResult.OpenCount, persistResult.MitigatedCount); err != nil {
+		log.Warn().Err(err).Msg("failed to send security scan Slack notification")
 	}
 
 	// Create Jira tickets for high+ findings without tickets
-	jiraThreshold := SeverityHigh
-	if v, ok := p.pluginCfg.Settings["jira_threshold"]; ok {
-		if s, ok := v.(string); ok {
-			jiraThreshold = s
-		}
-	}
+	jiraThreshold := plugin.SettingString(p.pluginCfg.Settings, "jira_threshold", SeverityHigh)
 
 	if findingsForJira, jiraErr := p.libs.DB.GetSecurityFindingsWithoutJira(repoName, jiraThreshold); jiraErr != nil {
 		log.Warn().Err(jiraErr).Msg("failed to get findings for Jira")
@@ -318,7 +314,7 @@ func (p *SecurityEngineerPlugin) resolveSecurityEpic(ctx context.Context, repoNa
 		return epicKey, nil
 	}
 
-	title := fmt.Sprintf("[Security] %s — Security Findings", repoName)
+	title := fmt.Sprintf("Security findings - %s", time.Now().UTC().Format("2006-01-02"))
 	description := fmt.Sprintf("Security findings for repository %s, created by %s.", repoName, p.libs.Config.BotDisplayName)
 	epicKey, err = p.libs.Tracker.CreateEpic(ctx, title, description, []string{"security"})
 	if err != nil {
