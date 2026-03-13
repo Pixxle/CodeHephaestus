@@ -1,4 +1,5 @@
 .env
+solomon.yaml
 *.log
 .worktrees/
 .solomon/

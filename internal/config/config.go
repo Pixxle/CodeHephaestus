@@ -72,8 +72,6 @@ type Config struct {
 	AgentTeamTimeout int
 
 	// Runtime
-	PollInterval   int
-	MaxIterations  int
 	TargetRepoPath string
 	WorktreePath   string
 	StateDBPath    string
@@ -147,8 +145,6 @@ func Load(envPath string) (*Config, error) {
 		MaxUATRetries:    envOrDefaultInt("MAX_UAT_RETRIES", 3),
 		AgentTeamTimeout: envOrDefaultInt("AGENT_TEAM_TIMEOUT", 3600),
 
-		PollInterval:   envOrDefaultInt("POLL_INTERVAL", 120),
-		MaxIterations:  envOrDefaultInt("MAX_ITERATIONS", 0),
 		TargetRepoPath: envOrDefault("TARGET_REPO_PATH", "."),
 		WorktreePath:   os.Getenv("WORKTREE_PATH"),
 		StateDBPath:    os.Getenv("STATE_DB_PATH"),

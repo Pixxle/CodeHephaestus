@@ -176,7 +176,7 @@ func TestLoad_Defaults(t *testing.T) {
 	// Clear env vars that have defaults to test the defaults
 	for _, key := range []string{
 		"BOT_DISPLAY_NAME", "JIRA_PLANNING_LABEL", "JIRA_APPROVAL_LABEL",
-		"PLANNING_MODEL", "POLL_INTERVAL", "MAX_REVIEW_ROUNDS",
+		"PLANNING_MODEL", "MAX_REVIEW_ROUNDS",
 	} {
 		t.Setenv(key, "")
 	}
@@ -197,9 +197,6 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.PlanningModel != "sonnet" {
 		t.Errorf("PlanningModel = %q, want %q", cfg.PlanningModel, "sonnet")
-	}
-	if cfg.PollInterval != 120 {
-		t.Errorf("PollInterval = %d, want %d", cfg.PollInterval, 120)
 	}
 	if cfg.MaxReviewRounds != 3 {
 		t.Errorf("MaxReviewRounds = %d, want %d", cfg.MaxReviewRounds, 3)

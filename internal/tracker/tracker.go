@@ -26,6 +26,7 @@ type TaskTracker interface {
 	IsReadySignal(ctx context.Context, issue Issue, botCommentID string) (bool, error)
 	ClearReadySignal(ctx context.Context, issueKey string) error
 	ReadySignalInstruction() string
+	CreateIssue(ctx context.Context, title, description string, labels []string) (string, error)
 }
 
 func NewTracker(cfg *config.Config) (TaskTracker, error) {

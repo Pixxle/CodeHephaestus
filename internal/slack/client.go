@@ -149,3 +149,10 @@ func (s *SlackNotifier) NotifyJailbreakDetected(ctx context.Context, issueKey, s
 	s.notify(ctx, issueKey, fmt.Sprintf(":rotating_light: *Jailbreak attempt detected*\nSource: %s\nReason: %s", source, reason))
 	return nil
 }
+
+func (s *SlackNotifier) NotifySecurityScanComplete(ctx context.Context, repoName string, newFindings, openFindings, mitigatedFindings int) error {
+	msg := fmt.Sprintf(":shield: *Security scan complete — %s*\nNew: %d | Open: %d | Mitigated: %d", repoName, newFindings, openFindings, mitigatedFindings)
+	// Post as a top-level message using the repo name as the thread key
+	s.notify(ctx, "security:"+repoName, msg)
+	return nil
+}
