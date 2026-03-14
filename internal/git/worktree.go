@@ -17,6 +17,23 @@ func UpdateMain(ctx context.Context, repoPath string) error {
 	return nil
 }
 
+// EnsureDetachedWorktree creates a temporary worktree checked out at the given
+// ref (e.g. "origin/main"). Any stale worktree at worktreeDir is removed first.
+func EnsureDetachedWorktree(ctx context.Context, repoPath, worktreeDir, ref string) error {
+	RemoveWorktree(ctx, repoPath, worktreeDir)
+
+	if err := run(ctx, repoPath, "git", "worktree", "add", "--detach", worktreeDir, ref); err != nil {
+		return fmt.Errorf("creating detached worktree at %s: %w", ref, err)
+	}
+	return nil
+}
+
+// RemoveWorktree removes a worktree directory and prunes stale refs.
+func RemoveWorktree(ctx context.Context, repoPath, worktreeDir string) {
+	_ = run(ctx, repoPath, "git", "worktree", "remove", "--force", worktreeDir)
+	_ = run(ctx, repoPath, "git", "worktree", "prune")
+}
+
 func EnsureWorktree(ctx context.Context, branch, repoPath, worktreeBase string) (string, error) {
 	safeName := strings.ReplaceAll(branch, "/", "_")
 	wtDir := filepath.Join(worktreeBase, safeName)
@@ -46,7 +63,7 @@ func EnsureWorktree(ctx context.Context, branch, repoPath, worktreeBase string) 
 	}
 
 	// New branch from default branch
-	baseBranch := defaultBranch(ctx, repoPath)
+	baseBranch := DefaultBranch(ctx, repoPath)
 	if err := run(ctx, repoPath, "git", "worktree", "add", wtDir, "-b", branch, baseBranch); err != nil {
 		return "", fmt.Errorf("creating worktree for new branch: %w", err)
 	}
@@ -57,8 +74,7 @@ func CleanupWorktree(ctx context.Context, branch, repoPath, worktreeBase string)
 	safeName := strings.ReplaceAll(branch, "/", "_")
 	wtDir := filepath.Join(worktreeBase, safeName)
 
-	_ = run(ctx, repoPath, "git", "worktree", "remove", "--force", wtDir)
-	_ = run(ctx, repoPath, "git", "worktree", "prune")
+	RemoveWorktree(ctx, repoPath, wtDir)
 	// Delete the local branch ref to prevent stale refs from interfering
 	// with future worktree creation if the same issue is reopened.
 	_ = run(ctx, repoPath, "git", "branch", "-D", branch)
@@ -98,8 +114,8 @@ func GetCurrentSHA(ctx context.Context, cwd string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
-// defaultBranch returns "main" or "master" depending on which exists in cwd.
-func defaultBranch(ctx context.Context, cwd string) string {
+// DefaultBranch returns "main" or "master" depending on which exists in cwd.
+func DefaultBranch(ctx context.Context, cwd string) string {
 	if err := run(ctx, cwd, "git", "rev-parse", "--verify", "main"); err != nil {
 		return "master"
 	}
@@ -108,19 +124,19 @@ func defaultBranch(ctx context.Context, cwd string) string {
 
 // DiffFromMain returns the diff between the default branch and HEAD.
 func DiffFromMain(ctx context.Context, cwd string) (string, error) {
-	base := defaultBranch(ctx, cwd)
+	base := DefaultBranch(ctx, cwd)
 	return output(ctx, cwd, "git", "diff", base+"...HEAD")
 }
 
 // CommitLogFromMain returns the oneline commit log between the default branch and HEAD.
 func CommitLogFromMain(ctx context.Context, cwd string) (string, error) {
-	base := defaultBranch(ctx, cwd)
+	base := DefaultBranch(ctx, cwd)
 	return output(ctx, cwd, "git", "log", base+"...HEAD", "--oneline")
 }
 
 // HasCommitsAheadOfMain returns true if HEAD has commits that the default branch does not.
 func HasCommitsAheadOfMain(ctx context.Context, cwd string) (bool, error) {
-	base := defaultBranch(ctx, cwd)
+	base := DefaultBranch(ctx, cwd)
 	out, err := output(ctx, cwd, "git", "rev-list", "--count", base+"..HEAD")
 	if err != nil {
 		return false, err

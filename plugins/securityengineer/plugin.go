@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/robfig/cron/v3"
 	"github.com/rs/zerolog/log"
@@ -96,46 +95,57 @@ func (p *SecurityEngineerPlugin) Stop(ctx context.Context) error {
 
 func (p *SecurityEngineerPlugin) runScan(ctx context.Context, scanType string) error {
 	for _, repo := range p.pluginCfg.Repos {
-		repoPath := repo.Path
-		if repoPath == "" || repoPath == "." {
-			repoPath = p.libs.Config.TargetRepoPath
-		}
-
-		log.Info().Str("repo", repo.Name).Str("scan_type", scanType).Msg("starting security scan")
-
-		// Update main branch
-		if err := git.UpdateMain(ctx, repoPath); err != nil {
-			log.Warn().Err(err).Str("repo", repo.Name).Msg("failed to update main branch")
-		}
-
-		commitHash := getCommitHash(repoPath)
-
-		// Create scan record
-		scan := &db.SecurityScan{
-			RepoName:   repo.Name,
-			ScanType:   scanType,
-			Status:     ScanStatusRunning,
-			CommitHash: commitHash,
-		}
-		if err := p.libs.DB.CreateSecurityScan(scan); err != nil {
-			return fmt.Errorf("create scan record: %w", err)
-		}
-
-		if scanType == ScanTypeQuick {
-			if err := p.runQuickScan(ctx, repo.Name, repoPath, scan.ID); err != nil {
-				p.libs.DB.UpdateSecurityScanStatus(scan.ID, ScanStatusFailed, err.Error())
-				log.Error().Err(err).Str("repo", repo.Name).Msg("quick scan failed")
-				continue
-			}
-		} else {
-			if err := p.runFullScan(ctx, repo.Name, repoPath, scan.ID); err != nil {
-				p.libs.DB.UpdateSecurityScanStatus(scan.ID, ScanStatusFailed, err.Error())
-				log.Error().Err(err).Str("repo", repo.Name).Msg("full scan failed")
-				continue
-			}
+		if err := p.scanRepo(ctx, repo, scanType); err != nil {
+			log.Error().Err(err).Str("repo", repo.Name).Msg("scan failed")
 		}
 	}
+	return nil
+}
 
+func (p *SecurityEngineerPlugin) scanRepo(ctx context.Context, repo plugin.RepoRef, scanType string) error {
+	repoPath := repo.Path
+	if repoPath == "" || repoPath == "." {
+		repoPath = p.libs.Config.TargetRepoPath
+	}
+
+	log.Info().Str("repo", repo.Name).Str("scan_type", scanType).Msg("starting security scan")
+
+	// Fetch latest from origin
+	if err := git.UpdateMain(ctx, repoPath); err != nil {
+		log.Warn().Err(err).Str("repo", repo.Name).Msg("failed to fetch origin")
+	}
+
+	// Create a temporary worktree at origin's default branch so we scan
+	// the latest code without touching the user's working tree.
+	defaultRef := "origin/" + git.DefaultBranch(ctx, repoPath)
+	wtDir := filepath.Join(p.libs.Config.DataPath, "security-worktrees", repo.Name)
+	if err := git.EnsureDetachedWorktree(ctx, repoPath, wtDir, defaultRef); err != nil {
+		return fmt.Errorf("create worktree: %w", err)
+	}
+	defer git.RemoveWorktree(context.Background(), repoPath, wtDir)
+
+	commitHash := getCommitHash(wtDir)
+
+	scan := &db.SecurityScan{
+		RepoName:   repo.Name,
+		ScanType:   scanType,
+		Status:     ScanStatusRunning,
+		CommitHash: commitHash,
+	}
+	if err := p.libs.DB.CreateSecurityScan(scan); err != nil {
+		return fmt.Errorf("create scan record: %w", err)
+	}
+
+	var scanErr error
+	if scanType == ScanTypeQuick {
+		scanErr = p.runQuickScan(ctx, repo.Name, wtDir, scan.ID)
+	} else {
+		scanErr = p.runFullScan(ctx, repo.Name, wtDir, scan.ID)
+	}
+	if scanErr != nil {
+		p.libs.DB.UpdateSecurityScanStatus(scan.ID, ScanStatusFailed, scanErr.Error())
+		return scanErr
+	}
 	return nil
 }
 
@@ -314,7 +324,7 @@ func (p *SecurityEngineerPlugin) resolveSecurityEpic(ctx context.Context, repoNa
 		return epicKey, nil
 	}
 
-	title := fmt.Sprintf("Security findings - %s", time.Now().UTC().Format("2006-01-02"))
+	title := fmt.Sprintf("Security findings - %s", repoName)
 	description := fmt.Sprintf("Security findings for repository %s, created by %s.", repoName, p.libs.Config.BotDisplayName)
 	epicKey, err = p.libs.Tracker.CreateEpic(ctx, title, description, []string{"security"})
 	if err != nil {

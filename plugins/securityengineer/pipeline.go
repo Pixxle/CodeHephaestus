@@ -214,5 +214,13 @@ func (p *Pipeline) consolidate(ctx context.Context, agentResults map[string][]*R
 		return findings, nil
 	}
 
+	for _, f := range consolidated.Findings {
+		if f.Agent == "" {
+			f.Agent = "CONSOLIDATED"
+		}
+		if f.Fingerprint == "" {
+			f.Fingerprint = GenerateFingerprint(f.Agent, f.FilePath, f.Title, f.LineStart)
+		}
+	}
 	return consolidated.Findings, nil
 }
