@@ -626,6 +626,51 @@ func (s *StateDB) SetSecurityEpicKey(repoName, epicKey string) error {
 	return err
 }
 
+// Changelog run tracking
+
+type ChangelogRun struct {
+	ID             int64
+	PluginInstance string
+	RepoName       string
+	LastCommitSHA  string
+	LastRunAt      time.Time
+	CreatedAt      time.Time
+}
+
+// GetChangelogRun returns the last changelog run for a plugin instance + repo.
+// Returns nil, nil on first run.
+func (s *StateDB) GetChangelogRun(pluginInstance, repoName string) (*ChangelogRun, error) {
+	row := s.db.QueryRow(`SELECT id, plugin_instance, repo_name, last_commit_sha, last_run_at, created_at
+		FROM changelog_runs WHERE plugin_instance = ? AND repo_name = ?`, pluginInstance, repoName)
+
+	cr := &ChangelogRun{}
+	var lastRunAt, createdAt sql.NullString
+	err := row.Scan(&cr.ID, &cr.PluginInstance, &cr.RepoName, &cr.LastCommitSHA, &lastRunAt, &createdAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if lastRunAt.Valid {
+		cr.LastRunAt = parseTime(lastRunAt.String)
+	}
+	if createdAt.Valid {
+		cr.CreatedAt = parseTime(createdAt.String)
+	}
+	return cr, nil
+}
+
+// UpsertChangelogRun creates or updates the last-seen commit for a plugin instance + repo.
+func (s *StateDB) UpsertChangelogRun(pluginInstance, repoName, commitSHA string) error {
+	now := timeStr(time.Now().UTC())
+	_, err := s.db.Exec(`INSERT INTO changelog_runs (plugin_instance, repo_name, last_commit_sha, last_run_at, created_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(plugin_instance, repo_name) DO UPDATE SET last_commit_sha = ?, last_run_at = ?`,
+		pluginInstance, repoName, commitSHA, now, now, commitSHA, now)
+	return err
+}
+
 func scanSecurityFindings(rows *sql.Rows) ([]*SecurityFinding, error) {
 	var result []*SecurityFinding
 	for rows.Next() {

@@ -1,0 +1,33 @@
+Generate a CHANGELOG.md section for the repository **{{.RepoName}}** covering changes as of {{.Date}}.
+{{- if .IsFirstRun}}
+This is the first changelog — treat it as the initial release summary.
+{{- end}}
+
+## Commits
+
+{{range .Commits}}
+### {{shortSHA .SHA}} — {{.Subject}} ({{.Author}}, {{.Date}})
+{{- if .PRBody}}
+
+**PR #{{.PRNumber}}: {{.PRTitle}}**
+{{.PRBody}}
+{{- end}}
+{{end}}
+
+## Instructions
+
+Write a Keep-a-Changelog style section following these rules:
+
+1. **Start with a date header**: `## {{.Date}}`
+2. **Group changes by category** using these subsections (omit empty ones):
+   - `### Added` — new features or capabilities
+   - `### Changed` — changes to existing functionality
+   - `### Fixed` — bug fixes
+   - `### Removed` — removed features or deprecated items
+   - `### Security` — security-related changes
+3. **Combine related commits** into a single entry using PR descriptions for context.
+4. **Each entry should be a single line** starting with `- ` and describing the change in plain language.
+5. **Include PR references** where available: `(#123)`.
+6. **Be concise but informative** — a developer should understand what changed and why.
+
+CRITICAL: Output ONLY the changelog section in Markdown. No preamble, no explanation, no code fences. Start directly with `## {{.Date}}`.

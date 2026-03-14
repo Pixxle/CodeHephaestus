@@ -1,6 +1,6 @@
 package db
 
-const schemaVersion = 9
+const schemaVersion = 10
 
 var migrations = [][]string{
 	// v1: Initial schema - each statement separate for SQLite compatibility
@@ -151,6 +151,18 @@ var migrations = [][]string{
 		`CREATE TABLE IF NOT EXISTS security_epics (
 			repo_name TEXT PRIMARY KEY,
 			epic_key TEXT NOT NULL
+		)`,
+	},
+	// v10: Changelog plugin — track last-seen commit per plugin instance + repo
+	{
+		`CREATE TABLE IF NOT EXISTS changelog_runs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			plugin_instance TEXT NOT NULL,
+			repo_name TEXT NOT NULL,
+			last_commit_sha TEXT NOT NULL,
+			last_run_at TEXT NOT NULL DEFAULT (datetime('now')),
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			UNIQUE(plugin_instance, repo_name)
 		)`,
 	},
 }

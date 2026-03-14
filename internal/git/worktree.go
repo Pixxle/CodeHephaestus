@@ -144,6 +144,25 @@ func HasCommitsAheadOfMain(ctx context.Context, cwd string) (bool, error) {
 	return strings.TrimSpace(out) != "0", nil
 }
 
+// RevParse runs git rev-parse on the given ref and returns the resolved SHA.
+func RevParse(ctx context.Context, cwd, ref string) (string, error) {
+	out, err := output(ctx, cwd, "git", "rev-parse", ref)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// Output runs a git command and returns stdout. The first arg should be a git subcommand.
+func Output(ctx context.Context, cwd string, args ...string) (string, error) {
+	return output(ctx, cwd, "git", args...)
+}
+
+// Run executes a command in the given directory.
+func Run(ctx context.Context, dir string, name string, args ...string) error {
+	return run(ctx, dir, name, args...)
+}
+
 func run(ctx context.Context, dir string, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir

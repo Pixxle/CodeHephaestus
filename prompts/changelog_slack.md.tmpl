@@ -1,0 +1,31 @@
+Generate a changelog message for Slack for the repository **{{.RepoName}}** on {{.Date}}.
+{{- if .IsFirstRun}}
+This is the first changelog run — treat it as a project summary / initial snapshot.
+{{- end}}
+
+## Commits
+
+{{range .Commits}}
+### {{shortSHA .SHA}} — {{.Subject}} ({{.Author}}, {{.Date}})
+{{- if .PRBody}}
+
+**PR #{{.PRNumber}}: {{.PRTitle}}**
+{{.PRBody}}
+{{- end}}
+{{end}}
+
+## Instructions
+
+Write a Slack changelog message following these rules:
+
+1. **Group related changes** — combine commits that belong to the same feature or fix into a single bullet point. Use the PR descriptions to understand what the commits accomplish together.
+2. **Focus on what changed and why**, not on individual commits. A reader should understand the impact without reading code.
+3. **Use plain language** — avoid commit-message jargon. Write for a team member who wants to know "what's new" in 30 seconds.
+4. **Keep it concise** — aim for 3-10 bullet points regardless of commit count.
+5. **Format for Slack** — use Slack mrkdwn: `*bold*`, `_italic_`, `` `code` ``, and bullet points with `•`.
+6. **Start with a header line**: `:memo: *Changelog — {{.RepoName}} ({{.Date}})*`
+{{- if .IsFirstRun}}
+7. After the header, add: `_Initial project snapshot_`
+{{- end}}
+
+CRITICAL: Output ONLY the Slack message. No preamble, no explanation, no markdown code fences. Start directly with the `:memo:` header line.

@@ -52,6 +52,34 @@ func (c *Client) GetAuthenticatedIdentity(ctx context.Context) (*GitIdentity, er
 	return &GitIdentity{Login: login, Name: name, Email: email}, nil
 }
 
+// CommitPR holds the PR metadata associated with a merge commit.
+type CommitPR struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	Body   string `json:"body"`
+}
+
+// GetPRForCommit returns the PR associated with a commit SHA, if any.
+func (c *Client) GetPRForCommit(ctx context.Context, sha string) (*CommitPR, error) {
+	out, err := c.gh(ctx, "api", fmt.Sprintf("repos/{owner}/{repo}/commits/%s/pulls", sha),
+		"--jq", ".[0] | {number, title, body}")
+	if err != nil {
+		return nil, err
+	}
+	out = strings.TrimSpace(out)
+	if out == "" || out == "null" {
+		return nil, nil
+	}
+	var pr CommitPR
+	if err := json.Unmarshal([]byte(out), &pr); err != nil {
+		return nil, nil
+	}
+	if pr.Number == 0 {
+		return nil, nil
+	}
+	return &pr, nil
+}
+
 func (c *Client) FindPRForBranch(ctx context.Context, branch string) (int, error) {
 	if n, err := c.FindOpenPRForBranch(ctx, branch); err != nil {
 		return 0, err

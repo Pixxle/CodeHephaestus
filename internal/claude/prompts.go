@@ -58,6 +58,12 @@ func RenderPrompt(templateName string, data interface{}) (string, error) {
 
 	funcMap := template.FuncMap{
 		"add": func(a, b int) int { return a + b },
+		"shortSHA": func(sha string) string {
+			if len(sha) > 7 {
+				return sha[:7]
+			}
+			return sha
+		},
 	}
 	tmpl, err := template.New(templateName).Funcs(funcMap).Parse(string(tmplData))
 	if err != nil {

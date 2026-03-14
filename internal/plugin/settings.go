@@ -40,6 +40,35 @@ func SettingBool(m map[string]interface{}, key string) bool {
 	return false
 }
 
+// SettingStringSlice extracts a string slice from a plugin settings map.
+// Handles YAML list → []interface{} → []string conversion.
+// Returns fallback if key missing or empty.
+func SettingStringSlice(m map[string]interface{}, key string, fallback []string) []string {
+	v, ok := m[key]
+	if !ok {
+		return fallback
+	}
+	switch val := v.(type) {
+	case []interface{}:
+		if len(val) == 0 {
+			return fallback
+		}
+		result := make([]string, 0, len(val))
+		for _, item := range val {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	case []string:
+		if len(val) == 0 {
+			return fallback
+		}
+		return val
+	}
+	return fallback
+}
+
 // SettingInt extracts an int value from a plugin settings map,
 // returning fallback if the key is missing. Handles both int and
 // float64 (as produced by YAML/JSON unmarshaling).

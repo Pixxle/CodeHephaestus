@@ -136,6 +136,20 @@ plugins:
       parallel_agents: 4
       jira_threshold: HIGH
       slack_channel_id: ${SLACK_SEC_CHANNEL_ID}
+
+  - type: changelog
+    repos:
+      - name: frontend
+    schedules:
+      - name: weekly
+        cron: "0 9 * * 1"
+    settings:
+      instance_id: frontend-changelog
+      output:
+        - slack
+        - pr
+      slack_channel_id: ${SLACK_CHANGELOG_CHANNEL_ID}
+      changelog_path: CHANGELOG.md
 ```
 
 ---
@@ -210,8 +224,8 @@ plugins:
 
 | Key | Type | Required | Description |
 |---|---|---|---|
-| `type` | string | yes | Plugin type: `developer` or `securityengineer` |
-| `board` | string | yes | Board ID this plugin uses |
+| `type` | string | yes | Plugin type: `developer`, `securityengineer`, or `changelog` |
+| `board` | string | no | Board ID this plugin uses (required for `developer` and `securityengineer`) |
 | `repos` | list | yes | Repositories this plugin operates on (each with a `name` field) |
 | `schedules` | list | yes | Cron schedules (each with `name` and `cron` fields) |
 | `settings` | map | no | Plugin-specific settings (see below) |
@@ -237,6 +251,16 @@ plugins:
 | `jira_threshold` | string | `HIGH` | Minimum severity for auto-creating Jira tickets: `CRITICAL`, `HIGH`, `MEDIUM`, `LOW` |
 | `slack_channel_id` | string | global | Override Slack channel for this plugin's notifications |
 
+### Changelog plugin settings
+
+| Setting | Type | Default | Description |
+|---|---|---|---|
+| `instance_id` | string | `changelog-0` | Unique ID for DB state tracking (use different IDs for multiple instances) |
+| `output` | list | `["slack"]` | Output methods: any combination of `slack` and `pr` |
+| `slack_channel_id` | string | global | Override Slack channel for changelog messages |
+| `changelog_path` | string | `CHANGELOG.md` | File path in repo for PR mode |
+| `max_commits` | int | `100` | Maximum commits to include per run |
+
 ### Environment variables (`.env`)
 
 | Variable | Required | Description |
@@ -250,6 +274,7 @@ plugins:
 | `SLACK_DEV_CHANNEL_ID` | no | Developer plugin Slack channel override |
 | `SLACK_STANDUP_CHANNEL_ID` | no | Standup Slack channel override |
 | `SLACK_SEC_CHANNEL_ID` | no | Security plugin Slack channel override |
+| `SLACK_CHANGELOG_CHANNEL_ID` | no | Changelog plugin Slack channel override |
 | `FIGMA_ACCESS_TOKEN` | no | Figma API token |
 
 \* Required when using Jira as the tracker.

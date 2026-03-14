@@ -22,6 +22,7 @@ import (
 	"github.com/pixxle/solomon/internal/tracker"
 
 	// Register plugins via init().
+	_ "github.com/pixxle/solomon/plugins/changelog"
 	_ "github.com/pixxle/solomon/plugins/developer"
 	_ "github.com/pixxle/solomon/plugins/securityengineer"
 )
