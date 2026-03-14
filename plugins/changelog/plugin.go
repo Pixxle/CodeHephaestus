@@ -88,6 +88,7 @@ func (p *ChangelogPlugin) Stop(ctx context.Context) error {
 }
 
 func (p *ChangelogPlugin) run(ctx context.Context) error {
+	log.Info().Msg("changelog: run started")
 	if len(p.pluginCfg.Repos) == 0 {
 		return fmt.Errorf("changelog plugin requires at least one repo")
 	}
