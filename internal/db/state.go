@@ -585,10 +585,11 @@ func (s *StateDB) GetSecurityFindingsWithoutJira(repoName string, minSeverity st
 		return nil, nil
 	}
 
-	// Build placeholders
+	// Build placeholders — use LOWER(severity) because LLM agents may produce
+	// mixed-case values (e.g. "HIGH") while allowed list uses lowercase.
 	query := `SELECT ` + securityFindingsCols + `
 		FROM security_findings
-		WHERE repo_name = ? AND status = 'open' AND (jira_issue_key IS NULL OR jira_issue_key = '') AND severity IN (`
+		WHERE repo_name = ? AND status = 'open' AND (jira_issue_key IS NULL OR jira_issue_key = '') AND LOWER(severity) IN (`
 	args := []interface{}{repoName}
 	for i, sev := range allowed {
 		if i > 0 {
