@@ -219,11 +219,11 @@ func TestAutoLaunchReady(t *testing.T) {
 	unassignedIssue := tracker.Issue{Key: "TEST-2", Assignees: []string{"other"}}
 
 	tests := []struct {
-		name        string
-		autoLaunch  bool
-		issue       tracker.Issue
-		ps          *db.PlanningState
-		want        bool
+		name       string
+		autoLaunch bool
+		issue      tracker.Issue
+		ps         *db.PlanningState
+		want       bool
 	}{
 		{"all conditions met", true, assignedIssue, completePlanState, true},
 		{"auto launch disabled", false, assignedIssue, completePlanState, false},
@@ -253,9 +253,9 @@ func TestIsProductPhaseComplete(t *testing.T) {
 func TestIsTechnicalPhaseComplete(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name  string
-		ps    *db.PlanningState
-		want  bool
+		name string
+		ps   *db.PlanningState
+		want bool
 	}{
 		{"product phase", &db.PlanningState{PlanningPhase: PhaseProduct, QuestionsJSON: "[]"}, false},
 		{"technical with questions", &db.PlanningState{PlanningPhase: PhaseTechnical, QuestionsJSON: `["Q?"]`}, false},
