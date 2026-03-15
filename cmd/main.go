@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 
@@ -64,6 +65,14 @@ func main() {
 	zerolog.SetGlobalLevel(level)
 	log.Logger = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).
 		With().Timestamp().Logger()
+
+	// Verify required external tools are available.
+	for _, bin := range []string{"claude", "gh", "git"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			fmt.Fprintf(os.Stderr, "required tool %q not found in PATH\n", bin)
+			os.Exit(1)
+		}
+	}
 
 	log.Info().Str("config", *configPath).Msg("starting solomon")
 
