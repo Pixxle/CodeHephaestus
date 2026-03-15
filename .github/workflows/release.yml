@@ -27,7 +27,7 @@ jobs:
             goos: linux
             goarch: arm64
             artifact: solomon-linux-arm64
-          - os: macos-13
+          - os: macos-latest
             goos: darwin
             goarch: amd64
             artifact: solomon-darwin-amd64
@@ -35,10 +35,6 @@ jobs:
             goos: darwin
             goarch: arm64
             artifact: solomon-darwin-arm64
-          - os: windows-latest
-            goos: windows
-            goarch: amd64
-            artifact: solomon-windows-amd64.exe
 
     runs-on: ${{ matrix.os }}
 
