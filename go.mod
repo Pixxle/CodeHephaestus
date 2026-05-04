@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/joho/godotenv v1.5.1
-	github.com/mattn/go-sqlite3 v1.14.42
+	github.com/mattn/go-sqlite3 v1.14.44
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/rs/zerolog v1.35.1
 	github.com/slack-go/slack v0.23.0
